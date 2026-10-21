@@ -1,0 +1,149 @@
+/* ===== PAINEL PRINCIPAL ===== */
+
+.dashboard {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px;
+  font-family: Arial, sans-serif;
+  color: #202938;
+}
+
+.dashboard h1 {
+  margin-bottom: 8px;
+  font-size: 32px;
+}
+
+.subtitle {
+  margin-top: 0;
+  color: #64748b;
+}
+
+
+/* ===== INDICADORES ===== */
+
+.resumo_funcionarios {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-top: 32px;
+}
+
+.indicador {
+  background-color: white;
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.indicador h2 {
+  margin: 0;
+  font-size: 28px;
+  color: #2563eb;
+}
+
+.indicador p {
+  margin-bottom: 0;
+  color: #64748b;
+}
+
+
+/* ===== REGISTROS ===== */
+
+.registros {
+  margin-top: 32px;
+  padding: 24px;
+  background-color: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.registros h2 {
+  margin-top: 0;
+  font-size: 20px;
+}
+
+
+/* ===== TABELA DE REGISTROS ===== */
+
+.registros table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.registros th,
+.registros td {
+  padding: 14px 12px;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+
+.registros th {
+  color: #2563eb;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.registros td {
+  font-size: 14px;
+}
+
+.registros tbody tr:last-child td {
+  border-bottom: none;
+}
+
+
+
+/* ===== RESPONSIVIDADE ===== */
+
+@media (max-width: 700px) {
+  .dashboard {
+    padding: 20px;
+  }
+
+  .resumo_funcionarios {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .indicador,
+  .registros {
+    padding: 18px;
+  }
+}
+
+  .registros {
+  overflow-x: auto;
+}
+
+/* ===== STATUS DOS REGISTROS ===== */
+
+.status {
+  display: inline-block;
+  padding: 5px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status-registrado {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.status-atraso {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.status-andamento {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.status-hora-extra {
+  background-color: #f3e8ff;
+  color: #6b21a8;
+}
+
