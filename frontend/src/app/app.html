@@ -1,1 +1,58 @@
-<router-outlet></router-outlet>
+<div class="app-layout">
+  <aside class="sidebar" aria-label="Menu principal">
+    <header class="sidebar-header">
+      <h1>Ponto Eletrônico</h1>
+      <p>Painel da Empresa</p>
+    </header>
+
+    <nav class="sidebar-navigation" aria-label="Navegação">
+      <a
+        class="navigation-button"
+        href="/dashboard"
+        routerLink="/dashboard"
+        routerLinkActive="active"
+        [routerLinkActiveOptions]="{ exact: true }"
+      >
+      <span class="navigation-icon" aria-hidden="true">🏠</span>
+        <span>Início</span>
+      </a>
+
+      <a
+        class="navigation-button"
+        href="/employees/new"
+        routerLink="/employees/new"
+        routerLinkActive="active"
+        [routerLinkActiveOptions]="{ exact: true }"
+      >
+      <span class="navigation-icon" aria-hidden="true">➕</span>
+        <span>Cadastrar Funcionário</span>
+      </a>
+
+      <a
+        class="navigation-button"
+        href="/employees"
+        routerLink="/employees"
+        routerLinkActive="active"
+        [routerLinkActiveOptions]="{ exact: true }"
+      >
+      <span class="navigation-icon" aria-hidden="true">👥</span>
+        <span>Funcionários</span>
+      </a>
+
+      <a
+        class="navigation-button"
+        href="/time-records"
+        routerLink="/time-records"
+        routerLinkActive="active"
+        [routerLinkActiveOptions]="{ exact: true }"
+      >
+      <span class="navigation-icon" aria-hidden="true">🕒</span>
+        <span>Registros de Ponto</span>
+      </a>
+    </nav>
+  </aside>
+
+  <main class="app-content">
+    <router-outlet></router-outlet>
+  </main>
+</div>

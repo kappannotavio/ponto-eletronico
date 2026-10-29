@@ -1,0 +1,77 @@
+:host {
+  display: block;
+  min-height: 100vh;
+}
+
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+  font-family: Arial, sans-serif;
+}
+
+.sidebar {
+  flex: 0 0 270px;
+  min-height: 100vh;
+  padding: 32px 20px;
+  color: #fff;
+  background: #173b68;
+}
+
+.sidebar-header {
+  padding: 0 8px 28px;
+  border-bottom: 1px solid rgb(255 255 255 / 18%);
+}
+
+.sidebar-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: bold;
+  line-height: 1.2;
+}
+
+.sidebar-header p {
+  margin: 8px 0 0;
+  color: #c5d5e8;
+  font-size: 0.95rem;
+}
+
+.sidebar-navigation {
+  display: grid;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.navigation-button {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 1rem;
+  text-decoration: none;
+  transition: background-color 160ms ease;
+}
+
+.navigation-button:hover,
+.navigation-button:focus-visible {
+  background: #285787;
+}
+
+.navigation-button.active {
+  background: #285787;
+  font-weight: bold;
+}
+
+.navigation-icon {
+  width: 25px;
+  flex: 0 0 24px;
+  text-align: center;
+  font-size: 1.5rem;
+}
+
+.app-content {
+  min-width: 0;
+  flex: 1;
+}
