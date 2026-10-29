@@ -147,3 +147,12 @@
   color: #6b21a8;
 }
 
+.registros th:nth-child(4),
+.registros td:nth-child(4) {
+  text-align: center;
+}
+
+.registros th:nth-child(3),
+.registros td:nth-child(3) {
+  text-align: center;
+}
