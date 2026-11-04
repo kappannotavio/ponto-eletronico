@@ -2,7 +2,7 @@
 
 .dashboard {
   max-width: 1100px;
-  margin: 0 auto;
+  margin-left: 50px;
   padding: 32px;
   font-family: Arial, sans-serif;
   color: #202938;
@@ -147,3 +147,12 @@
   color: #6b21a8;
 }
 
+.registros th:nth-child(4),
+.registros td:nth-child(4) {
+  text-align: center;
+}
+
+.registros th:nth-child(3),
+.registros td:nth-child(3) {
+  text-align: center;
+}

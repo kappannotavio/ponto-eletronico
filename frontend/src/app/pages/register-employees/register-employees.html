@@ -1,0 +1,74 @@
+<section class="registration-page" aria-labelledby="page-title">
+  <header class="page-header">
+    <h1 id="page-title">Cadastrar funcionário</h1>
+    <p class="subtitle">Preencha os dados abaixo. Os campos com * são obrigatórios.</p>
+  </header>
+
+  <form class="registration-form" aria-label="Cadastro de funcionário">
+    <section class="form-section" aria-labelledby="personal-title">
+      <h2 id="personal-title">1. Dados da pessoa</h2>
+      <div class="field-grid personal-grid">
+        <div class="field">
+          <label for="full-name">Nome completo *</label>
+          <input id="full-name" name="fullName" type="text" autocomplete="name" required />
+        </div>
+        <div class="field">
+          <label for="job-title">Função na empresa</label>
+          <input id="job-title" name="jobTitle" type="text" />
+        </div>
+        <div class="field">
+          <label for="whatsapp">WhatsApp</label>
+          <input id="whatsapp" name="whatsapp" type="tel" autocomplete="tel" />
+        </div>
+      </div>
+    </section>
+
+    <section class="form-section" aria-labelledby="schedule-title">
+      <h2 id="schedule-title">2. Jornada de trabalho</h2>
+      <div class="field-grid schedule-grid">
+        <div class="field">
+          <label for="start-time">Horário de entrada</label>
+          <input id="start-time" name="startTime" type="time" />
+        </div>
+        <div class="field">
+          <label for="daily-hours">Horas por dia</label>
+          <select id="daily-hours" name="dailyHours">
+            <option value="4">4 horas</option>
+            <option value="6">6 horas</option>
+            <option value="8">8 horas</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="lunch-break">Intervalo de almoço</label>
+          <select id="lunch-break" name="lunchBreak">
+            <option value="0">0 minutos</option>
+            <option value="15">15 minutos</option>
+            <option value="30">30 minutos</option>
+            <option value="60">60 minutos</option>
+            <option value="90">90 minutos</option>
+            <option value="120">120 minutos</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section class="form-section" aria-labelledby="clock-title">
+      <h2 id="clock-title">3. Identificação no relógio de ponto</h2>
+      <div class="field-grid clock-grid">
+        <div class="field">
+          <label for="card-tag">Cartão ou tag *</label>
+          <input id="card-tag" name="cardTag" type="text" required />
+        </div>
+        <div class="field">
+          <label for="pin">Senha de 4 números *</label>
+          <input id="pin" name="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" />
+        </div>
+      </div>
+    </section>
+
+    <div class="form-actions">
+      <button class="button button-primary" type="button">Salvar cadastro</button>
+      <button class="button button-secondary" type="button">Cancelar</button>
+    </div>
+  </form>
+</section>

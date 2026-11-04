@@ -1,0 +1,117 @@
+<section class="time-records-page" aria-labelledby="page-title">
+  <header class="page-header">
+    <h1 id="page-title">Registros de ponto</h1>
+    <p class="subtitle">Confira as marcações, corrija erros e gere os relatórios.</p>
+  </header>
+
+  <section class="filters-panel" aria-label="Filtros de marcações">
+    <div class="field">
+      <label for="employee-filter">Funcionário</label>
+      <select id="employee-filter" name="employee">
+        <option value="">Todos os funcionários</option>
+        <option value="ana">Ana Souza</option>
+        <option value="bruno">Bruno Lima</option>
+        <option value="carla">Carla Mendes</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="date-filter">Data</label>
+      <input id="date-filter" name="date" type="date" />
+    </div>
+    <button class="button button-clear" type="button">Ver todas as marcações</button>
+  </section>
+
+  <section class="records-panel" aria-labelledby="records-title">
+    <h2 id="records-title">Marcações</h2>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Funcionário</th>
+            <th scope="col">Entrada</th>
+            <th scope="col">Saída</th>
+            <th scope="col">Horas trabalhadas</th>
+            <th scope="col">Situação</th>
+            <th scope="col">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Ana Souza</td><td>08:00</td><td>—</td><td>—</td>
+            <td><span class="status status-andamento">Em andamento</span></td>
+            <td><button class="button button-edit" type="button">Editar</button></td>
+          </tr>
+          <tr>
+            <td>Carla Mendes</td><td>08:30</td><td>17:15</td><td>08:15</td>
+            <td><span class="status status-hora-extra">Hora extra</span></td>
+            <td><button class="button button-edit" type="button">Editar</button></td>
+          </tr>
+          <tr>
+            <td>Bruno Lima</td><td>09:12</td><td>15:00</td><td>05:48</td>
+            <td><span class="status status-atraso">Atraso</span></td>
+            <td><button class="button button-edit" type="button">Editar</button></td>
+          </tr>
+          <tr>
+            <td>Ana Souza</td><td>08:02</td><td>17:00</td><td>08:58</td>
+            <td><span class="status status-normal">Normal</span></td>
+            <td><button class="button button-edit" type="button">Editar</button></td>
+          </tr>
+          <tr>
+            <td>Carla Mendes</td><td>08:28</td><td>17:00</td><td>08:32</td>
+            <td><span class="status status-normal">Normal</span></td>
+            <td><button class="button button-edit" type="button">Editar</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="data-note">Registros fictícios exibidos apenas para demonstração da interface. Ordenados do mais recente ao mais antigo.</p>
+  </section>
+
+  <section class="reports-panel" aria-labelledby="reports-title">
+    <div>
+      <h2 id="reports-title">Relatórios</h2>
+      <p>Gera o resumo de horas trabalhadas, atrasos e horas extras do filtro acima.</p>
+    </div>
+    <div class="report-actions">
+      <button class="button button-excel" type="button">Baixar Excel</button>
+      <button class="button button-pdf" type="button">Baixar PDF</button>
+    </div>
+  </section>
+</section>
+
+<div class="modal-backdrop" hidden aria-hidden="true">
+  <section class="edit-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+    <header class="dialog-header">
+      <h2 id="edit-title">Editar marcação</h2>
+      <button class="close-button" type="button" aria-label="Fechar">×</button>
+    </header>
+    <form class="edit-form">
+      <div class="field-grid">
+        <div class="field">
+          <label for="edit-employee">Funcionário</label>
+          <select id="edit-employee" name="employee"><option>Ana Souza</option><option>Bruno Lima</option><option>Carla Mendes</option></select>
+        </div>
+        <div class="field">
+          <label for="edit-date">Data</label>
+          <input id="edit-date" name="date" type="date" />
+        </div>
+        <div class="field">
+          <label for="edit-entry">Horário de entrada</label>
+          <input id="edit-entry" name="entry" type="time" />
+        </div>
+        <div class="field">
+          <label for="edit-exit">Horário de saída</label>
+          <input id="edit-exit" name="exit" type="time" />
+        </div>
+        <div class="field">
+          <label for="edit-status">Situação</label>
+          <select id="edit-status" name="status"><option>Normal</option><option>Em andamento</option><option>Atraso</option><option>Hora extra</option></select>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="button button-primary" type="button">Salvar alterações</button>
+        <button class="button button-secondary" type="button">Cancelar</button>
+      </div>
+    </form>
+  </section>
+</div>
