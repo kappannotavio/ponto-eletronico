@@ -6,7 +6,7 @@
 
   <section class="search-panel" aria-label="Busca de funcionários">
     <label for="employee-search">Buscar por nome ou função</label>
-    <input id="employee-search" name="employeeSearch" type="text" placeholder="Digite aqui" />
+    <input id="employee-search" name="employeeSearch" [(ngModel)]="searchTerm" type="text" placeholder="Digite aqui" />
   </section>
 
   <section class="employee-table-panel" aria-label="Lista de funcionários">
@@ -22,27 +22,19 @@
           </tr>
         </thead>
         <tbody>
+          @for (employee of filteredEmployees; track employee.id) {
           <tr>
-            <td><span class="primary-text">Ana Souza</span><span class="secondary-text">Recepcionista</span></td>
-            <td><span class="primary-text">08:00</span><span class="secondary-text">8h/dia</span></td>
-            <td><span class="tag-id">TAG-001</span></td>
-            <td><span class="status status-active">Ativo</span></td>
-            <td><div class="row-actions"><button class="button button-edit" type="button">Editar</button><button class="button button-deactivate" type="button">Desativar</button></div></td>
+            <td><span class="primary-text">{{ employee.fullName }}</span><span class="secondary-text">{{ employee.jobTitle }}</span></td>
+            <td><span class="primary-text">{{ employee.startTime }}</span><span class="secondary-text">{{ employee.dailyHours }}h/dia</span></td>
+            <td><span class="tag-id">{{ employee.cardTag }}</span></td>
+            <td><span class="status" [class.status-active]="employee.isActive" [class.status-inactive]="!employee.isActive">{{ employee.isActive ? 'Ativo' : 'Inativo' }}</span></td>
+            <td><div class="row-actions"><button class="button button-edit" type="button" (click)="openEditModal($event, employee)">Editar</button><button class="button" [class.button-deactivate]="employee.isActive" [class.button-activate]="!employee.isActive" type="button" (click)="toggleEmployeeStatus(employee)">{{ employee.isActive ? 'Desativar' : 'Ativar' }}</button></div></td>
           </tr>
+          } @empty {
           <tr>
-            <td><span class="primary-text">Bruno Lima</span><span class="secondary-text">Auxiliar administrativo</span></td>
-            <td><span class="primary-text">09:00</span><span class="secondary-text">6h/dia</span></td>
-            <td><span class="tag-id">TAG-002</span></td>
-            <td><span class="status status-inactive">Inativo</span></td>
-            <td><div class="row-actions"><button class="button button-edit" type="button">Editar</button><button class="button button-activate" type="button">Ativar</button></div></td>
+            <td colspan="5">Nenhum funcionário encontrado.</td>
           </tr>
-          <tr>
-            <td><span class="primary-text">Carla Mendes</span><span class="secondary-text">Assistente de loja</span></td>
-            <td><span class="primary-text">08:30</span><span class="secondary-text">8h/dia</span></td>
-            <td><span class="tag-id">TAG-003</span></td>
-            <td><span class="status status-active">Ativo</span></td>
-            <td><div class="row-actions"><button class="button button-edit" type="button">Editar</button><button class="button button-deactivate" type="button">Desativar</button></div></td>
-          </tr>
+          }
         </tbody>
       </table>
     </div>
@@ -50,44 +42,46 @@
   </section>
 </section>
 
-<div class="modal-backdrop" hidden aria-hidden="true">
-  <section class="edit-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+@if (isEditModalOpen && editingEmployee; as employee) {
+<div class="modal-backdrop">
+  <section #editDialog class="edit-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-title">
     <header class="dialog-header">
       <h2 id="edit-title">Editar funcionário</h2>
-      <button class="close-button" type="button" aria-label="Fechar">×</button>
+      <button class="close-button" type="button" (click)="closeEditModal()" aria-label="Fechar">×</button>
     </header>
 
     <form class="edit-form">
       <section class="form-section" aria-labelledby="edit-person-title">
         <h3 id="edit-person-title">Dados da pessoa</h3>
         <div class="field-grid">
-          <div class="field"><label for="edit-full-name">Nome completo</label><input id="edit-full-name" name="fullName" type="text" /></div>
-          <div class="field"><label for="edit-job-title">Função na empresa</label><input id="edit-job-title" name="jobTitle" type="text" /></div>
-          <div class="field"><label for="edit-whatsapp">WhatsApp</label><input id="edit-whatsapp" name="whatsapp" type="tel" /></div>
+          <div class="field"><label for="edit-full-name">Nome completo</label><input id="edit-full-name" name="fullName" [(ngModel)]="employee.fullName" type="text" /></div>
+          <div class="field"><label for="edit-job-title">Função na empresa</label><input id="edit-job-title" name="jobTitle" [(ngModel)]="employee.jobTitle" type="text" /></div>
+          <div class="field"><label for="edit-whatsapp">WhatsApp</label><input id="edit-whatsapp" name="whatsapp" [(ngModel)]="employee.whatsapp" type="tel" /></div>
         </div>
       </section>
 
       <section class="form-section" aria-labelledby="edit-schedule-title">
         <h3 id="edit-schedule-title">Jornada de trabalho</h3>
         <div class="field-grid">
-          <div class="field"><label for="edit-start-time">Horário de entrada</label><input id="edit-start-time" name="startTime" type="time" /></div>
-          <div class="field"><label for="edit-daily-hours">Horas por dia</label><select id="edit-daily-hours" name="dailyHours"><option value="4">4 horas</option><option value="6">6 horas</option><option value="8">8 horas</option></select></div>
-          <div class="field"><label for="edit-lunch-break">Intervalo de almoço</label><select id="edit-lunch-break" name="lunchBreak"><option value="0">0 minutos</option><option value="15">15 minutos</option><option value="30">30 minutos</option><option value="60">60 minutos</option><option value="90">90 minutos</option><option value="120">120 minutos</option></select></div>
+          <div class="field"><label for="edit-start-time">Horário de entrada</label><input id="edit-start-time" name="startTime" [(ngModel)]="employee.startTime" type="time" /></div>
+          <div class="field"><label for="edit-daily-hours">Horas por dia</label><select id="edit-daily-hours" name="dailyHours" [(ngModel)]="employee.dailyHours"><option [ngValue]="4">4 horas</option><option [ngValue]="6">6 horas</option><option [ngValue]="8">8 horas</option></select></div>
+          <div class="field"><label for="edit-lunch-break">Intervalo de almoço</label><select id="edit-lunch-break" name="lunchBreak" [(ngModel)]="employee.lunchBreak"><option [ngValue]="0">0 minutos</option><option [ngValue]="15">15 minutos</option><option [ngValue]="30">30 minutos</option><option [ngValue]="60">60 minutos</option><option [ngValue]="90">90 minutos</option><option [ngValue]="120">120 minutos</option></select></div>
         </div>
       </section>
 
       <section class="form-section" aria-labelledby="edit-clock-title">
         <h3 id="edit-clock-title">Identificação no relógio de ponto</h3>
         <div class="field-grid">
-          <div class="field"><label for="edit-card-tag">Cartão ou tag</label><input id="edit-card-tag" name="cardTag" type="text" /></div>
-          <div class="field"><label for="edit-pin">Senha de 4 números</label><input id="edit-pin" name="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" /></div>
+          <div class="field"><label for="edit-card-tag">Cartão ou tag</label><input id="edit-card-tag" name="cardTag" [(ngModel)]="employee.cardTag" type="text" /></div>
+          <div class="field"><label for="edit-pin">Senha de 4 números</label><input id="edit-pin" name="pin" [(ngModel)]="employee.pin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" /></div>
         </div>
       </section>
 
       <div class="form-actions">
-        <button class="button button-primary" type="button">Salvar alterações</button>
-        <button class="button button-secondary" type="button">Cancelar</button>
+        <button class="button button-primary" type="button" (click)="saveEmployee()">Salvar alterações</button>
+        <button class="button button-secondary" type="button" (click)="closeEditModal()">Cancelar</button>
       </div>
     </form>
   </section>
 </div>
+}
