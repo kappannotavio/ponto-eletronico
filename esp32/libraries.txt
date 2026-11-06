@@ -1,0 +1,4 @@
+# Bibliotecas para o projeto no wokwi.com
+ArduinoJson
+MFRC522
+Keypad

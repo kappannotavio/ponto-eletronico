@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "author": "ponto-eletronico",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    { "type": "wokwi-membrane-keypad", "id": "keypad", "top": -60, "left": 220, "attrs": {} },
+    { "type": "wokwi-buzzer", "id": "buzzer", "top": -40, "left": -140, "attrs": { "volume": "0.1" } }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "keypad:R1", "esp:13", "green", [] ],
+    [ "keypad:R2", "esp:12", "green", [] ],
+    [ "keypad:R3", "esp:14", "green", [] ],
+    [ "keypad:R4", "esp:27", "green", [] ],
+    [ "keypad:C1", "esp:26", "blue", [] ],
+    [ "keypad:C2", "esp:25", "blue", [] ],
+    [ "keypad:C3", "esp:33", "blue", [] ],
+    [ "keypad:C4", "esp:32", "blue", [] ],
+    [ "buzzer:1", "esp:GND.1", "black", [] ],
+    [ "buzzer:2", "esp:17", "red", [] ]
+  ],
+  "dependencies": {}
+}
