@@ -7,18 +7,18 @@
   <section class="filters-panel" aria-label="Filtros de marcações">
     <div class="field">
       <label for="employee-filter">Funcionário</label>
-      <select id="employee-filter" name="employee">
-        <option value="">Todos os funcionários</option>
-        <option value="ana">Ana Souza</option>
-        <option value="bruno">Bruno Lima</option>
-        <option value="carla">Carla Mendes</option>
+      <select id="employee-filter" name="employee" [(ngModel)]="employeeFilter">
+        <option [ngValue]="null">Todos os funcionários</option>
+        @for (employee of employees; track employee.id) {
+          <option [ngValue]="employee.id">{{ employee.fullName }}</option>
+        }
       </select>
     </div>
     <div class="field">
       <label for="date-filter">Data</label>
-      <input id="date-filter" name="date" type="date" />
+      <input id="date-filter" name="date" [(ngModel)]="dateFilter" type="date" />
     </div>
-    <button class="button button-clear" type="button">Ver todas as marcações</button>
+    <button class="button button-clear" #clearButton type="button" (click)="clearFilters()">Limpar filtros</button>
   </section>
 
   <section class="records-panel" aria-labelledby="records-title">
@@ -28,6 +28,7 @@
         <thead>
           <tr>
             <th scope="col">Funcionário</th>
+            <th scope="col">Data</th>
             <th scope="col">Entrada</th>
             <th scope="col">Saída</th>
             <th scope="col">Horas trabalhadas</th>
@@ -36,35 +37,23 @@
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td>Ana Souza</td><td>08:00</td><td>—</td><td>—</td>
-            <td><span class="status status-andamento">Em andamento</span></td>
-            <td><button class="button button-edit" type="button" (click)="openEditModal($event)">Editar</button></td>
-          </tr>
-          <tr>
-            <td>Carla Mendes</td><td>08:30</td><td>17:15</td><td>08:15</td>
-            <td><span class="status status-hora-extra">Hora extra</span></td>
-            <td><button class="button button-edit" type="button" (click)="openEditModal($event)">Editar</button></td>
-          </tr>
-          <tr>
-            <td>Bruno Lima</td><td>09:12</td><td>15:00</td><td>05:48</td>
-            <td><span class="status status-atraso">Atraso</span></td>
-            <td><button class="button button-edit" type="button" (click)="openEditModal($event)">Editar</button></td>
-          </tr>
-          <tr>
-            <td>Ana Souza</td><td>08:02</td><td>17:00</td><td>08:58</td>
-            <td><span class="status status-normal">Normal</span></td>
-            <td><button class="button button-edit" type="button" (click)="openEditModal($event)">Editar</button></td>
-          </tr>
-          <tr>
-            <td>Carla Mendes</td><td>08:28</td><td>17:00</td><td>08:32</td>
-            <td><span class="status status-normal">Normal</span></td>
-            <td><button class="button button-edit" type="button" (click)="openEditModal($event)">Editar</button></td>
-          </tr>
+          @for (record of filteredRecords; track record.id) {
+            <tr>
+              <td>{{ employeeName(record.employeeId) }}</td>
+              <td>{{ formatDate(record.date) }}</td>
+              <td>{{ record.entry }}</td>
+              <td>{{ record.exit || '—' }}</td>
+              <td>{{ duration(record) }}</td>
+              <td><span class="status" [class]="'status status-' + record.demonstrationStatus">{{ statusLabels[record.demonstrationStatus] }}</span></td>
+              <td><button class="button button-edit" type="button" (click)="openEditModal($event, record)">Editar</button></td>
+            </tr>
+          } @empty {
+            <tr><td colspan="7">Nenhum registro corresponde aos filtros.</td></tr>
+          }
         </tbody>
       </table>
     </div>
-    <p class="data-note">Registros fictícios exibidos apenas para demonstração da interface. Ordenados do mais recente ao mais antigo.</p>
+    <p class="data-note">Registros fictícios em memória, ordenados do mais recente ao mais antigo. Horas representam apenas a diferença entre entrada e saída, sem descontos. Situações demonstrativas são preservadas na edição; o cálculo definitivo dependerá das regras do backend. Alterações são perdidas ao sair da página.</p>
   </section>
 
   <section class="reports-panel" aria-labelledby="reports-title">
@@ -79,38 +68,48 @@
   </section>
 </section>
 
-@if (isEditModalOpen) {
+@if (isEditModalOpen && editingRecord) {
 <div class="modal-backdrop">
   <section #editDialog class="edit-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-title">
     <header class="dialog-header">
       <h2 id="edit-title">Editar marcação</h2>
       <button class="close-button" type="button" (click)="closeEditModal()" aria-label="Fechar">×</button>
     </header>
-    <form class="edit-form">
+    <form class="edit-form" (ngSubmit)="saveRecord()" novalidate>
       <div class="field-grid">
         <div class="field">
           <label for="edit-employee">Funcionário</label>
-          <select id="edit-employee" name="employee"><option>Ana Souza</option><option>Bruno Lima</option><option>Carla Mendes</option></select>
+          <input id="edit-employee" [value]="employeeName(editingRecord.employeeId)" readonly />
         </div>
         <div class="field">
           <label for="edit-date">Data</label>
-          <input id="edit-date" name="date" type="date" />
+          <input id="edit-date" name="date" [(ngModel)]="editingRecord.date" [attr.aria-invalid]="editSubmitted && !!editErrors.date" [attr.aria-describedby]="editSubmitted && editErrors.date ? 'date-error' : null" type="date" />
+          @if (editSubmitted && editErrors.date) {
+            <small id="date-error" role="alert">{{ editErrors.date }}</small>
+          }
         </div>
         <div class="field">
           <label for="edit-entry">Horário de entrada</label>
-          <input id="edit-entry" name="entry" type="time" />
+          <input id="edit-entry" name="entry" [(ngModel)]="editingRecord.entry" [attr.aria-invalid]="editSubmitted && !!editErrors.entry" [attr.aria-describedby]="editSubmitted && editErrors.entry ? 'entry-error' : null" type="time" />
+          @if (editSubmitted && editErrors.entry) {
+            <small id="entry-error" role="alert">{{ editErrors.entry }}</small>
+          }
         </div>
         <div class="field">
           <label for="edit-exit">Horário de saída</label>
-          <input id="edit-exit" name="exit" type="time" />
+          <input id="edit-exit" name="exit" [(ngModel)]="editingRecord.exit" [attr.aria-invalid]="editSubmitted && !!editErrors.exit" [attr.aria-describedby]="editSubmitted && editErrors.exit ? 'exit-error' : null" type="time" />
+          @if (editSubmitted && editErrors.exit) {
+            <small id="exit-error" role="alert">{{ editErrors.exit }}</small>
+          }
         </div>
         <div class="field">
           <label for="edit-status">Situação</label>
-          <select id="edit-status" name="status"><option>Normal</option><option>Em andamento</option><option>Atraso</option><option>Hora extra</option></select>
+          <input id="edit-status" [value]="statusLabels[editingRecord.demonstrationStatus]" readonly aria-describedby="status-note" />
+          <small id="status-note">Situação fictícia, sem recálculo nesta demonstração.</small>
         </div>
       </div>
       <div class="form-actions">
-        <button class="button button-primary" type="button">Salvar alterações</button>
+        <button class="button button-primary" type="submit">Salvar alterações</button>
         <button class="button button-secondary" type="button" (click)="closeEditModal()">Cancelar</button>
       </div>
     </form>

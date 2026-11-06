@@ -2,18 +2,7 @@ import { afterNextRender, Component, ElementRef, inject, Injector, viewChild } f
 
 import { FormsModule } from '@angular/forms';
 
-interface Employee {
-  readonly id: number;
-  fullName: string;
-  jobTitle: string;
-  whatsapp: string;
-  startTime: string;
-  dailyHours: number;
-  lunchBreak: number;
-  cardTag: string;
-  pin: string;
-  isActive: boolean;
-}
+import { Employee } from '../../models/employee';
 
 @Component({
   imports: [FormsModule],
