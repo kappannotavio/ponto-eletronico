@@ -4,21 +4,27 @@
     <p class="subtitle">Preencha os dados abaixo. Os campos com * são obrigatórios.</p>
   </header>
 
-  <form class="registration-form" aria-label="Cadastro de funcionário">
+  <form [formGroup]="form" (ngSubmit)="onSubmit()" class="registration-form" aria-label="Cadastro de funcionário">
     <section class="form-section" aria-labelledby="personal-title">
       <h2 id="personal-title">1. Dados da pessoa</h2>
       <div class="field-grid personal-grid">
         <div class="field">
           <label for="full-name">Nome completo *</label>
-          <input id="full-name" name="fullName" type="text" autocomplete="name" required />
+          <input id="full-name" name="fullName" formControlName="fullName" [class.invalid]="isInvalid('fullName')" [attr.aria-invalid]="isInvalid('fullName')" [attr.aria-describedby]="isInvalid('fullName') ? 'fullName-error' : null" type="text" autocomplete="name" required />
+          @if (isInvalid('fullName')) {
+            <small class="field-error" id="fullName-error">Informe o nome completo.</small>
+          }
         </div>
         <div class="field">
           <label for="job-title">Função na empresa</label>
-          <input id="job-title" name="jobTitle" type="text" />
+          <input id="job-title" name="jobTitle" formControlName="jobTitle" type="text" />
         </div>
         <div class="field">
           <label for="whatsapp">WhatsApp</label>
-          <input id="whatsapp" name="whatsapp" type="tel" autocomplete="tel" />
+          <input id="whatsapp" name="whatsapp" formControlName="whatsapp" [class.invalid]="isInvalid('whatsapp')" [attr.aria-invalid]="isInvalid('whatsapp')" [attr.aria-describedby]="isInvalid('whatsapp') ? 'whatsapp-error' : null" type="tel" autocomplete="tel" />
+          @if (isInvalid('whatsapp')) {
+            <small class="field-error" id="whatsapp-error">Informe um número com DDD, como (11) 99999-9999 ou +55 11 99999-9999.</small>
+          }
         </div>
       </div>
     </section>
@@ -28,26 +34,35 @@
       <div class="field-grid schedule-grid">
         <div class="field">
           <label for="start-time">Horário de entrada</label>
-          <input id="start-time" name="startTime" type="time" />
+          <input id="start-time" name="startTime" formControlName="startTime" [class.invalid]="isInvalid('startTime')" [attr.aria-invalid]="isInvalid('startTime')" [attr.aria-describedby]="isInvalid('startTime') ? 'startTime-error' : null" type="time" />
+          @if (isInvalid('startTime')) {
+            <small class="field-error" id="startTime-error">Informe um horário válido (HH:mm).</small>
+          }
         </div>
         <div class="field">
           <label for="daily-hours">Horas por dia</label>
-          <select id="daily-hours" name="dailyHours">
-            <option value="4">4 horas</option>
-            <option value="6">6 horas</option>
-            <option value="8">8 horas</option>
+          <select id="daily-hours" name="dailyHours" formControlName="dailyHours" [class.invalid]="isInvalid('dailyHours')" [attr.aria-invalid]="isInvalid('dailyHours')" [attr.aria-describedby]="isInvalid('dailyHours') ? 'dailyHours-error' : null">
+            <option [ngValue]="4">4 horas</option>
+            <option [ngValue]="6">6 horas</option>
+            <option [ngValue]="8">8 horas</option>
           </select>
+          @if (isInvalid('dailyHours')) {
+            <small class="field-error" id="dailyHours-error">Selecione uma jornada de 4, 6 ou 8 horas.</small>
+          }
         </div>
         <div class="field">
-          <label for="lunch-break">Intervalo de almoço</label>
-          <select id="lunch-break" name="lunchBreak">
-            <option value="0">0 minutos</option>
-            <option value="15">15 minutos</option>
-            <option value="30">30 minutos</option>
-            <option value="60">60 minutos</option>
-            <option value="90">90 minutos</option>
-            <option value="120">120 minutos</option>
+          <label for="lunch-break">Intervalo</label>
+          <select id="lunch-break" name="lunchBreak" formControlName="lunchBreak" [class.invalid]="isInvalid('lunchBreak')" [attr.aria-invalid]="isInvalid('lunchBreak')" [attr.aria-describedby]="isInvalid('lunchBreak') ? 'lunchBreak-error' : null">
+            <option [ngValue]="0">0 minutos</option>
+            <option [ngValue]="15">15 minutos</option>
+            <option [ngValue]="30">30 minutos</option>
+            <option [ngValue]="60">60 minutos</option>
+            <option [ngValue]="90">90 minutos</option>
+            <option [ngValue]="120">120 minutos</option>
           </select>
+          @if (isInvalid('lunchBreak')) {
+            <small class="field-error" id="lunchBreak-error">Selecione um intervalo de 0, 15, 30, 60, 90 ou 120 minutos.</small>
+          }
         </div>
       </div>
     </section>
@@ -57,18 +72,28 @@
       <div class="field-grid clock-grid">
         <div class="field">
           <label for="card-tag">Cartão ou tag *</label>
-          <input id="card-tag" name="cardTag" type="text" required />
+          <input id="card-tag" name="cardTag" formControlName="cardTag" [class.invalid]="isInvalid('cardTag')" [attr.aria-invalid]="isInvalid('cardTag')" [attr.aria-describedby]="isInvalid('cardTag') ? 'cardTag-error' : null" type="text" required />
+          @if (isInvalid('cardTag')) {
+            <small class="field-error" id="cardTag-error">Informe o cartão ou tag.</small>
+          }
         </div>
         <div class="field">
           <label for="pin">Senha de 4 números *</label>
-          <input id="pin" name="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" />
+          <input id="pin" name="pin" formControlName="pin" [class.invalid]="isInvalid('pin')" [attr.aria-invalid]="isInvalid('pin')" [attr.aria-describedby]="isInvalid('pin') ? 'pin-error' : null" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" />
+          @if (isInvalid('pin')) {
+            <small class="field-error" id="pin-error">Informe exatamente 4 dígitos numéricos.</small>
+          }
         </div>
       </div>
     </section>
 
+    @if (validated()) {
+      <p class="validation-message" role="status">Dados validados, mas ainda não enviados ao servidor.</p>
+    }
+
     <div class="form-actions">
-      <button class="button button-primary" type="button">Salvar cadastro</button>
-      <button class="button button-secondary" type="button">Cancelar</button>
+      <button class="button button-primary" type="submit">Salvar cadastro</button>
+      <button class="button button-secondary" type="button" (click)="onCancel()">Cancelar</button>
     </div>
   </form>
 </section>
