@@ -7,22 +7,29 @@
   <section class="filters-panel" aria-label="Filtros de marcações">
     <div class="field">
       <label for="employee-filter">Funcionário</label>
-      <select id="employee-filter" name="employee">
-        <option value="">Todos os funcionários</option>
-        <option value="ana">Ana Souza</option>
-        <option value="bruno">Bruno Lima</option>
-        <option value="carla">Carla Mendes</option>
+      <select id="employee-filter" name="employee" [ngModel]="filterEmployeeId()" (ngModelChange)="setEmployeeFilter($event)">
+        <option [ngValue]="null">Todos os funcionários</option>
+        @for (employee of employees(); track employee.id) {
+        <option [ngValue]="employee.id">{{ employee.fullName }}{{ employee.isActive ? '' : ' (inativo)' }}</option>
+        }
       </select>
     </div>
     <div class="field">
       <label for="date-filter">Data</label>
-      <input id="date-filter" name="date" type="date" />
+      <input id="date-filter" name="date" type="date" [ngModel]="filterDate()" (ngModelChange)="setDateFilter($event)" />
     </div>
-    <button class="button button-clear" type="button">Ver todas as marcações</button>
+    <button class="button button-clear" type="button" (click)="clearFilters()">Ver todas as marcações</button>
   </section>
 
+  @if (error(); as message) {
+  <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+
   <section class="records-panel" aria-labelledby="records-title">
-    <h2 id="records-title">Marcações</h2>
+    <div class="records-header">
+      <h2 id="records-title">Marcações</h2>
+      <button class="button button-edit" type="button" (click)="openCreateModal($event)">Nova marcação</button>
+    </div>
     <div class="table-scroll">
       <table>
         <thead>
@@ -36,82 +43,91 @@
           </tr>
         </thead>
         <tbody>
+          @for (day of days(); track day.employeeId + day.date) {
           <tr>
-            <td>Ana Souza</td><td>08:00</td><td>—</td><td>—</td>
-            <td><span class="status status-andamento">Em andamento</span></td>
-            <td><button class="button button-edit" type="button" (click)="openEditModal($event)">Editar</button></td>
+            <td><span class="primary-text">{{ day.employeeName }}</span><span class="secondary-text">{{ formatDate(day.date) }} · {{ day.times.length }} batida(s)</span></td>
+            <td>{{ day.entry ?? '—' }}</td>
+            <td>{{ day.exit ?? '—' }}</td>
+            <td>{{ day.workedMinutes ? formatMinutes(day.workedMinutes) : '—' }}</td>
+            <td><span [class]="'status ' + statusClasses[day.status]">{{ statusLabels[day.status] }}</span></td>
+            <td><button class="button button-edit" type="button" (click)="openEditModal($event, day)">Editar</button></td>
           </tr>
+          } @empty {
           <tr>
-            <td>Carla Mendes</td><td>08:30</td><td>17:15</td><td>08:15</td>
-            <td><span class="status status-hora-extra">Hora extra</span></td>
-            <td><button class="button button-edit" type="button" (click)="openEditModal($event)">Editar</button></td>
+            <td colspan="6">{{ loading() ? 'Carregando…' : 'Nenhuma marcação encontrada para o filtro.' }}</td>
           </tr>
-          <tr>
-            <td>Bruno Lima</td><td>09:12</td><td>15:00</td><td>05:48</td>
-            <td><span class="status status-atraso">Atraso</span></td>
-            <td><button class="button button-edit" type="button" (click)="openEditModal($event)">Editar</button></td>
-          </tr>
-          <tr>
-            <td>Ana Souza</td><td>08:02</td><td>17:00</td><td>08:58</td>
-            <td><span class="status status-normal">Normal</span></td>
-            <td><button class="button button-edit" type="button" (click)="openEditModal($event)">Editar</button></td>
-          </tr>
-          <tr>
-            <td>Carla Mendes</td><td>08:28</td><td>17:00</td><td>08:32</td>
-            <td><span class="status status-normal">Normal</span></td>
-            <td><button class="button button-edit" type="button" (click)="openEditModal($event)">Editar</button></td>
-          </tr>
+          }
         </tbody>
       </table>
     </div>
-    <p class="data-note">Registros fictícios exibidos apenas para demonstração da interface. Ordenados do mais recente ao mais antigo.</p>
+    <p class="data-note">Ordenados do mais recente ao mais antigo. Atraso e hora extra consideram 10 minutos de tolerância.</p>
   </section>
 
   <section class="reports-panel" aria-labelledby="reports-title">
     <div>
       <h2 id="reports-title">Relatórios</h2>
-      <p>Gera o resumo de horas trabalhadas, atrasos e horas extras do filtro acima.</p>
+      <p>Excel com todas as marcações do filtro, ou PDF com o espelho de ponto de cada funcionário para assinatura.</p>
     </div>
     <div class="report-actions">
-      <button class="button button-excel" type="button">Baixar Excel</button>
-      <button class="button button-pdf" type="button">Baixar PDF</button>
+      <a class="button button-excel" [href]="csvUrl()" download="relatorio-ponto.csv">Baixar Excel</a>
+      <a class="button button-pdf" [href]="pdfUrl()" download="espelho-de-ponto.pdf">Baixar PDF</a>
     </div>
   </section>
 </section>
 
-@if (isEditModalOpen) {
+@if (editingDay(); as day) {
 <div class="modal-backdrop">
   <section #editDialog class="edit-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-title">
     <header class="dialog-header">
-      <h2 id="edit-title">Editar marcação</h2>
+      <h2 id="edit-title">{{ day.mode === 'edit' ? 'Editar marcação' : 'Nova marcação' }}</h2>
       <button class="close-button" type="button" (click)="closeEditModal()" aria-label="Fechar">×</button>
     </header>
-    <form class="edit-form">
+    <form class="edit-form" (ngSubmit)="saveDay()">
       <div class="field-grid">
         <div class="field">
           <label for="edit-employee">Funcionário</label>
-          <select id="edit-employee" name="employee"><option>Ana Souza</option><option>Bruno Lima</option><option>Carla Mendes</option></select>
+          @if (day.mode === 'edit') {
+          <input id="edit-employee" name="employeeName" type="text" [value]="day.employeeName" readonly />
+          } @else {
+          <select id="edit-employee" name="employee" [(ngModel)]="day.employeeId">
+            <option [ngValue]="null" disabled>Escolha…</option>
+            @for (employee of employees(); track employee.id) {
+            <option [ngValue]="employee.id">{{ employee.fullName }}</option>
+            }
+          </select>
+          }
         </div>
         <div class="field">
           <label for="edit-date">Data</label>
-          <input id="edit-date" name="date" type="date" />
+          <input id="edit-date" name="date" type="date" [(ngModel)]="day.date" [readonly]="day.mode === 'edit'" />
         </div>
         <div class="field">
           <label for="edit-entry">Horário de entrada</label>
-          <input id="edit-entry" name="entry" type="time" />
+          <input id="edit-entry" name="entry" type="time" [(ngModel)]="day.entry" />
         </div>
         <div class="field">
           <label for="edit-exit">Horário de saída</label>
-          <input id="edit-exit" name="exit" type="time" />
-        </div>
-        <div class="field">
-          <label for="edit-status">Situação</label>
-          <select id="edit-status" name="status"><option>Normal</option><option>Em andamento</option><option>Atraso</option><option>Hora extra</option></select>
+          <input id="edit-exit" name="exit" type="time" [(ngModel)]="day.exit" />
         </div>
       </div>
+
+      @if (day.middle.length) {
+      <p class="field-hint">Batidas de intervalo mantidas: {{ day.middle.join(', ') }}.</p>
+      }
+      @if (day.mode === 'create') {
+      <p class="field-hint">Os horários informados são somados às batidas que o dia já tiver.</p>
+      }
+
+      @if (editError(); as message) {
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+      }
+
       <div class="form-actions">
-        <button class="button button-primary" type="button">Salvar alterações</button>
+        <button class="button button-primary" type="submit" [disabled]="saving()">{{ saving() ? 'Salvando…' : 'Salvar alterações' }}</button>
         <button class="button button-secondary" type="button" (click)="closeEditModal()">Cancelar</button>
+        @if (day.mode === 'edit') {
+        <button class="button button-danger" type="button" (click)="deleteDay()" [disabled]="saving()">Apagar dia</button>
+        }
       </div>
     </form>
   </section>

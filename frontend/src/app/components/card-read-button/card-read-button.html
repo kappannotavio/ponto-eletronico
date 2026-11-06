@@ -1,0 +1,14 @@
+<div class="card-read">
+  @if (waiting()) {
+  <button class="read-button" type="button" (click)="cancel()">Cancelar leitura</button>
+  } @else {
+  <button class="read-button" type="button" (click)="start()">Ler no relógio</button>
+  }
+
+  @if (feedback(); as message) {
+  <p [class]="'feedback feedback-' + message.kind" role="status">
+    @if (waiting()) {<span class="spinner" aria-hidden="true"></span>}
+    {{ message.text }}
+  </p>
+  }
+</div>

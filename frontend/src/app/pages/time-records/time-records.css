@@ -321,3 +321,19 @@ tbody tr:last-child td {
     padding: 20px;
   }
 }
+
+.status-incompleto {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.records-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.edit-form .field-hint {
+  margin-top: 12px;
+}

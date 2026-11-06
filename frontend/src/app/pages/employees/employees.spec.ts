@@ -1,5 +1,14 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+import { Employee } from '../../core/models';
 import { Employees } from './employees';
+
+const employees: Employee[] = [1, 2].map(id => ({
+  id, fullName: `Pessoa ${id}`, jobTitle: 'Cargo', whatsapp: '', startTime: '08:00', dailyHours: 8,
+  lunchBreak: 60, cardTag: `TAG-${id}`, isActive: true, createdAt: '', updatedAt: '',
+}));
 
 describe('Employees', () => {
   let component: Employees;
@@ -8,10 +17,12 @@ describe('Employees', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [Employees],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
     }).compileComponents();
 
     fixture = TestBed.createComponent(Employees);
     component = fixture.componentInstance;
+    TestBed.inject(HttpTestingController).expectOne('/api/v1/employees').flush(employees);
     await fixture.whenStable();
   });
 

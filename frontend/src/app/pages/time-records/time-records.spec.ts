@@ -1,5 +1,14 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+import { Attendance } from '../../core/models';
 import { TimeRecords } from './time-records';
+
+const days: Attendance[] = [{
+  employeeId: 1, employeeName: 'Pessoa 1', date: '2026-11-06', entry: '08:00', exit: '17:00',
+  workedMinutes: 480, late: false, status: 'normal', times: ['08:00', '17:00'], records: [],
+}];
 
 describe('TimeRecords', () => {
   let component: TimeRecords;
@@ -8,10 +17,14 @@ describe('TimeRecords', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [TimeRecords],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
     }).compileComponents();
 
     fixture = TestBed.createComponent(TimeRecords);
     component = fixture.componentInstance;
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/v1/employees').flush([]);
+    http.expectOne(request => request.url === '/api/v1/attendance').flush(days);
     await fixture.whenStable();
   });
 
