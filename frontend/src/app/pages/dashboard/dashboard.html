@@ -6,25 +6,25 @@
     Acompanhe os registros de ponto da empresa.
   </p>
 
-  <section class="resumo_funcionarios">
-    <div class="indicador">
-      <h2>0</h2>
-      <p>Funcionários presentes</p>
-    </div>
+  <section class="resumo_funcionarios" aria-label="Filtrar marcações">
+    <button type="button" class="indicador" [class.selected]="selectedFilter === 'present'" [attr.aria-pressed]="selectedFilter === 'present'" (click)="toggleFilter('present')">
+      <span class="indicator-value">{{ totals.present }}</span>
+      <span class="indicator-label">Funcionários presentes</span>
+    </button>
 
-    <div class="indicador">
-      <h2>0</h2>
-      <p>Atrasos</p>
-    </div>
+    <button type="button" class="indicador" [class.selected]="selectedFilter === 'late'" [attr.aria-pressed]="selectedFilter === 'late'" (click)="toggleFilter('late')">
+      <span class="indicator-value">{{ totals.late }}</span>
+      <span class="indicator-label">Atrasos</span>
+    </button>
 
-    <div class="indicador">
-      <h2>0</h2>
-      <p>Sem marcação</p>
-    </div>
+    <button type="button" class="indicador" [class.selected]="selectedFilter === 'missing'" [attr.aria-pressed]="selectedFilter === 'missing'" (click)="toggleFilter('missing')">
+      <span class="indicator-value">{{ totals.missing }}</span>
+      <span class="indicator-label">Sem marcação</span>
+    </button>
   </section>
 
   <section class="registros">
-    <h2>Marcações de hoje</h2>
+    <h2>Marcações de {{ dateLabel }} — demonstração</h2>
     <table>
       <thead>
         <tr>
@@ -37,36 +37,23 @@
       </thead>
 
       <tbody>
-        <tr>
-          <td>Ana Silva</td>
-          <td>08:02</td>
-          <td>17:00</td>
-          <td>8h</td>
-          <td>
-            <span class="status status-andamento">Andamento</span>
-          </td>
-        </tr>
-
-        <tr>
-          <td>Lucas Santos</td>
-          <td>08:15</td>
-          <td>17:00</td>
-          <td>8h</td>
-          <td>
-            <span class="status status-atraso">Atraso</span>
-          </td>
-        </tr>
-
-        <tr>
-          <td>Maria Oliveira</td>
-          <td>12:04</td>
-          <td>17:00</td>
-          <td>8h</td>
-          <td>
-          <span class="status status-registrado">Registrado</span></td>
-        </tr>
+        @for (row of filteredRows; track row.employeeId) {
+          <tr>
+            <td>{{ row.fullName }}</td>
+            <td>{{ row.entry }}</td>
+            <td>{{ row.exit }}</td>
+            <td>{{ row.duration }}</td>
+            <td><span [class]="'status ' + row.statusClass">{{ row.status }}</span></td>
+          </tr>
+        } @empty {
+          <tr><td colspan="5">Nenhum funcionário corresponde ao filtro.</td></tr>
+        }
       </tbody>
     </table>
+    <p class="data-note">Dados fictícios. Nesta demonstração, todos os funcionários ativos são esperados no dia indicado.
+      Uma entrada conta como presença; atraso usa tolerância zero e tem prioridade na situação exibida.
+      Sem marcação não significa falta. A duração bruta considera a primeira marcação do dia, sem descontar intervalos ou atravessar a meia-noite.
+      Calendário, múltiplas jornadas e regras definitivas ainda serão definidos.</p>
 
   </section>
 </div>
