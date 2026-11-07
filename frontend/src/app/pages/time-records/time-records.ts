@@ -1,8 +1,23 @@
-import { afterNextRender, Component, ElementRef, inject, Injector, viewChild } from '@angular/core';
-
+import { afterNextRender, Component, computed, ElementRef, inject, Injector, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Employee } from '../../models/employee';
-import { TimeRecord, TimeRecordStatus } from '../../models/time-record';
+import { map, Observable, of, switchMap } from 'rxjs';
+
+import { apiErrorMessage } from '../../core/api';
+import { EmployeeService } from '../../core/employee.service';
+import { formatDate, formatMinutes, STATUS_CLASSES, STATUS_LABELS, todayIso } from '../../core/format';
+import { Attendance, Employee } from '../../core/models';
+import { TimeRecordService } from '../../core/time-record.service';
+
+interface DayForm {
+  mode: 'edit' | 'create';
+  employeeId: number | null;
+  employeeName: string;
+  date: string;
+  entry: string;
+  exit: string;
+  /** Batidas entre a entrada e a saída (almoço), preservadas na edição. */
+  middle: string[];
+}
 
 @Component({
   imports: [FormsModule],
@@ -15,121 +30,154 @@ import { TimeRecord, TimeRecordStatus } from '../../models/time-record';
   templateUrl: './time-records.html',
 })
 export class TimeRecords {
-  readonly employees: Pick<Employee, 'id' | 'fullName'>[] = [
-    { id: 1, fullName: 'Ana Souza' },
-    { id: 2, fullName: 'Bruno Lima' },
-    { id: 3, fullName: 'Carla Mendes' },
-  ];
-  // Dates assigned to the five original HTML fixtures for filtering and sorting.
-  readonly records: TimeRecord[] = [
-    { id: 1, employeeId: 1, date: '2026-11-06', entry: '08:00', demonstrationStatus: 'andamento' },
-    { id: 2, employeeId: 3, date: '2026-11-05', entry: '08:30', exit: '17:15', demonstrationStatus: 'hora-extra' },
-    { id: 3, employeeId: 2, date: '2026-11-05', entry: '09:12', exit: '15:00', demonstrationStatus: 'atraso' },
-    { id: 4, employeeId: 1, date: '2026-11-04', entry: '08:02', exit: '17:00', demonstrationStatus: 'normal' },
-    { id: 5, employeeId: 3, date: '2026-11-04', entry: '08:28', exit: '17:00', demonstrationStatus: 'normal' },
-  ];
-  readonly statusLabels: Record<TimeRecordStatus, string> = {
-    andamento: 'Em andamento', normal: 'Normal', atraso: 'Atraso', 'hora-extra': 'Hora extra',
-  };
-  employeeFilter: number | null = null;
-  dateFilter = '';
-  editingRecord: TimeRecord | null = null;
+  readonly employees = signal<Employee[]>([]);
+  readonly days = signal<Attendance[]>([]);
+  readonly loading = signal(true);
+  readonly error = signal<string | null>(null);
+  readonly editingDay = signal<DayForm | null>(null);
+  readonly editError = signal<string | null>(null);
+  readonly saving = signal(false);
   editSubmitted = false;
-  isEditModalOpen = false;
 
-  get filteredRecords(): TimeRecord[] {
-    return this.records.filter(record =>
-      (this.employeeFilter === null || record.employeeId === this.employeeFilter) &&
-      (!this.dateFilter || record.date === this.dateFilter),
-    ).sort((a, b) => b.date.localeCompare(a.date) || b.entry.localeCompare(a.entry) || b.id - a.id);
+  readonly filterEmployeeId = signal<number | null>(null);
+  readonly filterDate = signal('');
+
+  readonly csvUrl = computed(() => this.timeRecords.reportCsvUrl(this.currentFilter()));
+  readonly pdfUrl = computed(() => this.timeRecords.reportPdfUrl(this.currentFilter()));
+
+  protected readonly statusLabels = STATUS_LABELS;
+  protected readonly statusClasses = STATUS_CLASSES;
+  protected readonly formatMinutes = formatMinutes;
+  protected readonly formatDate = formatDate;
+
+  private readonly timeRecords = inject(TimeRecordService);
+  private readonly employeeService = inject(EmployeeService);
+  private readonly injector = inject(Injector);
+  private readonly editDialog = viewChild<ElementRef<HTMLElement>>('editDialog');
+  private editTrigger: HTMLElement | null = null;
+
+  constructor() {
+    this.employeeService.list().subscribe({
+      next: employees => this.employees.set(employees),
+      error: error => this.error.set(apiErrorMessage(error)),
+    });
+    this.loadDays();
   }
 
-  employeeName(id: number): string {
-    return this.employees.find(employee => employee.id === id)?.fullName ?? 'Funcionário indisponível';
+  setEmployeeFilter(employeeId: number | null): void {
+    this.filterEmployeeId.set(employeeId);
+    this.loadDays();
   }
 
-  formatDate(date: string): string {
-    return date.split('-').reverse().join('/');
+  setDateFilter(date: string): void {
+    this.filterDate.set(date);
+    this.loadDays();
   }
 
   clearFilters(): void {
-    this.employeeFilter = null;
-    this.dateFilter = '';
+    this.filterEmployeeId.set(null);
+    this.filterDate.set('');
+    this.loadDays();
   }
 
-  private minutes(time: string): number | null {
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return null;
-    const [hours, minutes] = time.split(':').map(Number);
-    return hours * 60 + minutes;
+  loadDays(): void {
+    this.loading.set(true);
+    this.timeRecords.attendance(this.currentFilter()).subscribe({
+      next: days => {
+        this.days.set(days);
+        this.error.set(null);
+        this.loading.set(false);
+      },
+      error: error => {
+        this.error.set(apiErrorMessage(error));
+        this.loading.set(false);
+      },
+    });
   }
 
-  duration(record: TimeRecord): string {
-    const entry = this.minutes(record.entry);
-    const exit = this.minutes(record.exit ?? '');
-    if (entry === null || exit === null || exit <= entry) return '—';
-    const difference = exit - entry;
-    return `${Math.floor(difference / 60).toString().padStart(2, '0')}:${(difference % 60).toString().padStart(2, '0')}`;
+  openEditModal(event: MouseEvent, day: Attendance): void {
+    const middle = day.exit ? day.times.slice(1, -1) : day.times.slice(1);
+
+    this.openModal(event, {
+      mode: 'edit',
+      employeeId: day.employeeId,
+      employeeName: day.employeeName,
+      date: day.date,
+      entry: day.entry ?? '',
+      exit: day.exit ?? '',
+      middle,
+    });
   }
 
-  get editErrors(): { date?: string; entry?: string; exit?: string } {
-    const record = this.editingRecord;
-    if (!record) return {};
-    const errors: { date?: string; entry?: string; exit?: string } = {};
-    const date = new Date(`${record.date}T00:00:00Z`);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(record.date) || record.date.startsWith('0000') ||
-        Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== record.date) {
+  openCreateModal(event: MouseEvent): void {
+    this.openModal(event, {
+      mode: 'create',
+      employeeId: this.filterEmployeeId(),
+      employeeName: '',
+      date: this.filterDate() || todayIso(),
+      entry: '',
+      exit: '',
+      middle: [],
+    });
+  }
+
+  /** Erros do formulário de marcação, exibidos depois da primeira tentativa de salvar. */
+  get editErrors(): { employee?: string; date?: string; entry?: string; exit?: string } {
+    const form = this.editingDay();
+    if (!form) return {};
+
+    const errors: { employee?: string; date?: string; entry?: string; exit?: string } = {};
+    const date = new Date(`${form.date}T00:00:00Z`);
+    if (!form.employeeId) errors.employee = 'Escolha o funcionário.';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(form.date) || form.date.startsWith('0000') ||
+        Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== form.date) {
       errors.date = 'Informe uma data válida.';
     }
-    const entry = this.minutes(record.entry);
-    const exit = this.minutes(record.exit ?? '');
+
+    const entry = minutes(form.entry);
+    const exit = minutes(form.exit);
     if (entry === null) errors.entry = 'Informe uma entrada válida (HH:mm).';
-    if (record.exit && exit === null) errors.exit = 'Informe uma saída válida (HH:mm).';
+    if (form.exit && exit === null) errors.exit = 'Informe uma saída válida (HH:mm).';
     else if (exit !== null && entry !== null && exit <= entry) {
       errors.exit = 'A saída deve ser posterior à entrada, no mesmo dia.';
     }
     return errors;
   }
 
-  saveRecord(): void {
+  saveDay(): void {
+    const form = this.editingDay();
+    if (!form || this.saving()) return;
+
     this.editSubmitted = true;
-    const draft = this.editingRecord;
-    if (!draft || Object.keys(this.editErrors).length) return;
-    const index = this.records.findIndex(record => record.id === draft.id);
-    if (index < 0) return;
-    this.records[index] = { ...this.records[index], date: draft.date, entry: draft.entry, exit: draft.exit || undefined };
-    this.closeEditModal();
-    // If a date edit removes the row from the current filter, focus a stable control.
-    afterNextRender(() => {
-      if (this.editTrigger === null && !document.activeElement?.closest('.time-records-page')) {
-        this.clearButton()?.nativeElement.focus();
-      }
-    }, { injector: this.injector });
+    if (Object.keys(this.editErrors).length) return;
+
+    const { employeeId, date } = form;
+    if (!employeeId) return;
+
+    const typed = [form.entry, ...form.middle, form.exit].filter(time => time);
+
+    // Na criação, as batidas digitadas se somam às que o dia já tiver.
+    const times$: Observable<string[]> = form.mode === 'edit'
+      ? of(typed)
+      : this.timeRecords.attendance({ employeeId, date }).pipe(
+        map(existing => [...(existing[0]?.times ?? []), ...typed]),
+      );
+
+    this.persistDay(employeeId, date, times$);
   }
 
-  private readonly injector = inject(Injector);
-  private readonly editDialog = viewChild<ElementRef<HTMLElement>>('editDialog');
-  private readonly clearButton = viewChild<ElementRef<HTMLButtonElement>>('clearButton');
-  private editTrigger: HTMLElement | null = null;
+  deleteDay(): void {
+    const form = this.editingDay();
+    if (!form?.employeeId || this.saving()) return;
+    if (!window.confirm(`Apagar todas as batidas de ${form.employeeName} em ${formatDate(form.date)}?`)) return;
 
-  openEditModal(event: MouseEvent, record: TimeRecord): void {
-    this.editingRecord = { ...record };
-    this.editSubmitted = false;
-    this.editTrigger = event.currentTarget as HTMLElement;
-    this.isEditModalOpen = true;
-
-    afterNextRender(() => {
-      this.editDialog()?.nativeElement
-        .querySelector<HTMLElement>('input:not([disabled]):not([readonly]), select:not([disabled]), textarea:not([disabled]):not([readonly])')
-        ?.focus();
-    }, { injector: this.injector });
+    this.persistDay(form.employeeId, form.date, of([]));
   }
 
   closeEditModal(): void {
-    if (!this.isEditModalOpen) return;
+    if (!this.editingDay()) return;
 
-    this.isEditModalOpen = false;
-    this.editingRecord = null;
-    this.editSubmitted = false;
+    this.editingDay.set(null);
     this.editTrigger?.focus();
     this.editTrigger = null;
   }
@@ -137,7 +185,7 @@ export class TimeRecords {
   trapModalFocus(event: KeyboardEvent): void {
     if (event.key !== 'Tab') return;
     const dialog = this.editDialog()?.nativeElement;
-    if (!this.isEditModalOpen || !dialog) return;
+    if (!this.editingDay() || !dialog) return;
 
     const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
       'input:not([type="hidden"]), select, textarea, button, a[href], [tabindex]',
@@ -155,4 +203,44 @@ export class TimeRecords {
       first?.focus();
     }
   }
+
+  private openModal(event: MouseEvent, form: DayForm): void {
+    this.editingDay.set(form);
+    this.editError.set(null);
+    this.editSubmitted = false;
+    this.editTrigger = event.currentTarget as HTMLElement;
+
+    afterNextRender(() => {
+      this.editDialog()?.nativeElement
+        .querySelector<HTMLElement>('input:not([disabled]):not([readonly]), select:not([disabled]), textarea:not([disabled]):not([readonly])')
+        ?.focus();
+    }, { injector: this.injector });
+  }
+
+  private persistDay(employeeId: number, date: string, times$: Observable<string[]>): void {
+    this.saving.set(true);
+    this.editError.set(null);
+
+    times$.pipe(switchMap(times => this.timeRecords.replaceDay(employeeId, date, times))).subscribe({
+      next: () => {
+        this.saving.set(false);
+        this.closeEditModal();
+        this.loadDays();
+      },
+      error: error => {
+        this.saving.set(false);
+        this.editError.set(apiErrorMessage(error));
+      },
+    });
+  }
+
+  private currentFilter() {
+    return { employeeId: this.filterEmployeeId(), date: this.filterDate() };
+  }
+}
+
+function minutes(time: string): number | null {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return null;
+  const [hours, mins] = time.split(':').map(Number);
+  return hours * 60 + mins;
 }

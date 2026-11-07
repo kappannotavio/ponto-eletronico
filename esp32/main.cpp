@@ -1,29 +1,47 @@
-
+#include <Arduino.h>
 #include <WiFi.h>
-#include <time.h>
+#include <HTTPClient.h>
 #include <Preferences.h>
 #include <SPI.h>
 #include <MFRC522.h>
 #include <Keypad.h>
 #include <ArduinoJson.h>
-#include <mbedtls/sha256.h>
+#include <time.h>
+#include <sys/time.h>
 
 // =====================================================
 // 1. CONFIGURACAO
 // =====================================================
 
-// Wi-Fi opcional: usado somente para sincronizar o relogio.
-// O menu, o cadastro e o ponto funcionam sem internet.
-const char* WIFI_SSID = "Wokwi-GUEST";
-const char* WIFI_PASSWORD = "";
+// Valores padrao, prontos para o simulador Wokwi. No ESP32 real,
+// configure pelo monitor serial (comandos wifi, servidor e chave):
+// fica salvo na memoria e nao precisa recompilar.
+const char* WIFI_SSID_PADRAO = "Wokwi-GUEST";
+const char* WIFI_PASSWORD_PADRAO = "";
 
-// Fuso horario de Brasilia: UTC-3
-const long GMT_OFFSET = -3 * 3600;
-const int DAYLIGHT_OFFSET = 0;
+// No Wokwi (VS Code), host.wokwi.internal aponta para o seu computador.
+const char* API_BASE_URL_PADRAO = "http://host.wokwi.internal:8080/api/v1";
+
+// Deve ser igual a variavel DEVICE_API_KEY do backend.
+const char* DEVICE_API_KEY_PADRAO = "dev-device-key";
+
+// Fuso horario de Brasilia (UTC-3) no formato POSIX.
+const char* TIMEZONE = "<-03>3";
 
 const int RFID_SS = 5;
 const int RFID_RST = 21;
 const int BUZZER_PIN = 17;
+
+const int PIN_LENGTH = 4;
+const int MAX_PIN_ATTEMPTS = 3;
+const int MAX_OFFLINE_QUEUE = 50;
+
+const unsigned long PIN_TIMEOUT_MS = 15000;
+const unsigned long CARD_READ_TIMEOUT_MS = 60000;
+const unsigned long POLL_INTERVAL_MS = 2000;
+const unsigned long POLL_BACKOFF_MS = 15000;
+const unsigned long SYNC_INTERVAL_MS = 30000;
+const unsigned long WIFI_RETRY_MS = 10000;
 
 // =====================================================
 // 2. OBJETOS DO HARDWARE
@@ -57,34 +75,40 @@ Keypad keypad = Keypad(
 // =====================================================
 // 3. ESTADOS DO SISTEMA
 // =====================================================
+//
+// AGUARDANDO_TAG      -> tela inicial: aproximar o cartao bate o ponto
+// DIGITANDO_PIN       -> cartao lido, esperando a senha no teclado
+// LENDO_TAG_CADASTRO  -> o painel pediu para ler uma tag nova
+//                        (cadastro/edicao de funcionario)
+// =====================================================
 
 enum Estado {
-  MENU,
-  LENDO_TAG_CADASTRO,
-  DIGITANDO_SENHA_CADASTRO,
-  LENDO_TAG_PONTO,
-  LENDO_TAG_NOME,
-  LENDO_TAG_TROCA_SENHA,
-  DIGITANDO_NOVA_SENHA
+  AGUARDANDO_TAG,
+  DIGITANDO_PIN,
+  LENDO_TAG_CADASTRO
 };
 
-Estado estado = MENU;
+Estado estado = AGUARDANDO_TAG;
 
-String nomeTemporario = "";
-String uidTemporario = "";
-String senhaDigitada = "";
+String tagAtual = "";
+String nomeAtual = "";
+String pinDigitado = "";
+String leituraId = "";
+String tagSimulada = "";
 
-const char* NOMES_TESTE[] = {
-  "Maria Silva",
-  "Joao Santos",
-  "Ana Oliveira",
-  "Pedro Souza",
-  "Lucas Ferreira",
-  "Julia Costa"
-};
+// Configuracao em uso (padrao ou salva na memoria).
+String wifiSsid = "";
+String wifiSenha = "";
+String apiBaseUrl = "";
+String deviceApiKey = "";
 
-const int QUANTIDADE_NOMES =
-  sizeof(NOMES_TESTE) / sizeof(NOMES_TESTE[0]);
+int tentativasPin = 0;
+bool wifiEstavaConectado = false;
+
+unsigned long prazoEstado = 0;
+unsigned long proximaConsulta = 0;
+unsigned long proximaSincronizacao = 0;
+unsigned long proximaTentativaWifi = 0;
 
 // =====================================================
 // 4. FUNCOES AUXILIARES
@@ -96,20 +120,67 @@ void bip(int duracao = 100) {
   digitalWrite(BUZZER_PIN, LOW);
 }
 
-void mostrarMenu() {
-  Serial.println();
-  Serial.println("================================");
-  Serial.println("       PONTO ELETRONICO");
-  Serial.println("================================");
-  Serial.println("1 - Cadastrar novo usuario");
-  Serial.println("2 - Bater ponto");
-  Serial.println("3 - Listar usuarios");
-  Serial.println("4 - Alterar nome");
-  Serial.println("5 - Trocar senha");
-  Serial.println("6 - Consultar historico de pontos");
-  Serial.println("7 - Mostrar data e hora");
-  Serial.println("================================");
-  Serial.println("Digite uma opcao e pressione Enter:");
+void bipSucesso() {
+  bip(150);
+}
+
+void bipSaida() {
+  bip(100);
+  delay(80);
+  bip(100);
+}
+
+void bipErro() {
+  bip(600);
+}
+
+// Compara instantes de millis() sem quebrar no overflow (~49 dias).
+bool passou(unsigned long instante) {
+  return (long)(millis() - instante) >= 0;
+}
+
+bool wifiConectado() {
+  return WiFi.status() == WL_CONNECTED;
+}
+
+bool relogioSincronizado() {
+  // Qualquer data depois de 2023 indica que NTP ou o servidor acertaram o relogio.
+  return time(nullptr) > 1700000000;
+}
+
+String obterDataHora() {
+  if (!relogioSincronizado()) {
+    return "HORA_NAO_SINCRONIZADA";
+  }
+
+  time_t agora = time(nullptr);
+  struct tm info;
+  localtime_r(&agora, &info);
+
+  char buffer[25];
+  strftime(buffer, sizeof(buffer), "%d/%m/%Y %H:%M:%S", &info);
+
+  return String(buffer);
+}
+
+// Instante atual em ISO 8601 UTC, formato aceito pelo backend.
+String instanteIsoUtc() {
+  time_t agora = time(nullptr);
+  struct tm info;
+  gmtime_r(&agora, &info);
+
+  char buffer[25];
+  strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &info);
+
+  return String(buffer);
+}
+
+String horaDe(const String& isoComFuso) {
+  // "2026-11-06T08:01:12-03:00" -> "08:01"
+  if (isoComFuso.length() < 16) {
+    return isoComFuso;
+  }
+  return isoComFuso.substring(11, 16);
 }
 
 String lerUID() {
@@ -131,284 +202,238 @@ String lerUID() {
   return uid;
 }
 
-String calcularHash(const String& uid, const String& senha) {
-  // Demonstracao local. SHA-256 simples nao e adequado
-  // para proteger senhas em um sistema de producao.
-  String entrada = uid + ":" + senha;
+void voltarAoInicio() {
+  tagAtual = "";
+  nomeAtual = "";
+  pinDigitado = "";
+  leituraId = "";
+  tentativasPin = 0;
+  estado = AGUARDANDO_TAG;
 
-  unsigned char hash[32];
-
-  mbedtls_sha256(
-    (const unsigned char*)entrada.c_str(),
-    entrada.length(),
-    hash,
-    0
-  );
-
-  char resultado[65];
-
-  for (int i = 0; i < 32; i++) {
-    sprintf(&resultado[i * 2], "%02x", hash[i]);
-  }
-
-  resultado[64] = '\0';
-  return String(resultado);
-}
-
-String obterDataHora() {
-  struct tm info;
-
-  if (getLocalTime(&info, 100)) {
-    char buffer[25];
-
-    strftime(
-      buffer,
-      sizeof(buffer),
-      "%d/%m/%Y %H:%M:%S",
-      &info
-    );
-
-    return String(buffer);
-  }
-
-  // Sem NTP/RTC, millis nao representa data real.
-  return "HORA_NAO_SINCRONIZADA";
+  Serial.println();
+  Serial.println("Aproxime o cartao para bater o ponto.");
 }
 
 // =====================================================
-// 5. ARMAZENAMENTO PERSISTENTE
+// 5. COMUNICACAO COM O BACKEND
 // =====================================================
 //
-// Preferences/NVS substitui LittleFS neste exemplo.
-// Os usuarios continuam salvos depois de reiniciar.
+// Todas as rotas do relogio ficam em /api/v1/device/*
+// e exigem o header X-Device-Key.
 //
-// Estrutura salva na chave "usuarios":
+// Retorna o status HTTP, ou um valor <= 0 quando nao foi
+// possivel falar com o servidor (sem Wi-Fi, timeout...).
+// =====================================================
+
+int requisicaoApi(
+  const char* metodo,
+  const String& caminho,
+  const String& corpo,
+  JsonDocument* resposta
+) {
+  if (!wifiConectado()) {
+    return -1;
+  }
+
+  HTTPClient http;
+  http.setConnectTimeout(2000);
+  http.setTimeout(4000);
+
+  if (!http.begin(apiBaseUrl + caminho)) {
+    return -1;
+  }
+
+  http.addHeader("X-Device-Key", deviceApiKey);
+
+  if (corpo.length() > 0) {
+    http.addHeader("Content-Type", "application/json");
+  }
+
+  int status = http.sendRequest(metodo, corpo);
+
+  if (status > 0 && resposta != nullptr) {
+    String texto = http.getString();
+
+    if (texto.length() > 0) {
+      deserializeJson(*resposta, texto);
+    }
+  }
+
+  http.end();
+  return status;
+}
+
+String mensagemDeErro(int status, JsonDocument& resposta) {
+  if (status <= 0) {
+    return "servidor indisponivel";
+  }
+
+  String mensagem = resposta["error"] | "";
+
+  if (mensagem.length() == 0) {
+    mensagem = "erro HTTP " + String(status);
+  }
+
+  return mensagem;
+}
+
+// Usa o horario do servidor quando o NTP nao responde
+// (comum em redes simuladas ou bloqueadas).
+void sincronizarRelogioPeloServidor() {
+  if (relogioSincronizado()) {
+    return;
+  }
+
+  JsonDocument resposta;
+
+  if (requisicaoApi("GET", "/device/ping", "", &resposta) != 200) {
+    return;
+  }
+
+  struct timeval agora = {};
+  agora.tv_sec = (time_t)resposta["unixTime"].as<long long>();
+  settimeofday(&agora, nullptr);
+
+  Serial.println("Relogio acertado pelo servidor: " + obterDataHora());
+}
+
+// =====================================================
+// 6. FILA OFFLINE
+// =====================================================
+//
+// Se o backend estiver fora do ar, o ponto e guardado na
+// NVS (chave "fila") e reenviado a cada 30 segundos.
+// A senha so e validada quando a batida chega ao servidor.
+//
+// Estrutura salva:
 // [
 //   {
-//     "uid": "AA:BB:CC:DD",
-//     "nome": "Maria Silva",
-//     "hash": "..."
+//     "cardTag": "AA:BB:CC:DD",
+//     "pin": "1234",
+//     "recordedAt": "2026-11-06T11:00:00Z"
 //   }
 // ]
 // =====================================================
 
-bool carregarUsuarios(JsonDocument& doc) {
-  String conteudo = memoria.getString("usuarios", "[]");
+void carregarFila(JsonDocument& doc) {
+  String conteudo = memoria.getString("fila", "[]");
 
-  DeserializationError erro =
-    deserializeJson(doc, conteudo);
-
-  if (erro) {
-    Serial.println("Erro ao ler os usuarios salvos.");
-    return false;
+  if (deserializeJson(doc, conteudo) || !doc.is<JsonArray>()) {
+    doc.to<JsonArray>();
   }
-
-  return true;
 }
 
-bool salvarUsuarios(JsonDocument& doc) {
+void salvarFila(JsonDocument& doc) {
   String conteudo;
   serializeJson(doc, conteudo);
 
-  size_t gravados = memoria.putString(
-    "usuarios",
-    conteudo
-  );
-
-  if (gravados == 0 && conteudo.length() > 0) {
-    Serial.println("Erro ao salvar usuarios.");
-    return false;
+  if (memoria.putString("fila", conteudo) == 0 && conteudo.length() > 0) {
+    Serial.println("Erro ao salvar a fila offline.");
   }
-
-  return true;
 }
 
-int buscarUsuario(JsonDocument& doc, const String& uid) {
-  JsonArray usuarios = doc.as<JsonArray>();
+int tamanhoFila() {
+  JsonDocument doc;
+  carregarFila(doc);
+  return doc.as<JsonArray>().size();
+}
 
-  for (int i = 0; i < usuarios.size(); i++) {
-    if (usuarios[i]["uid"].as<String>() == uid) {
-      return i;
+void enfileirarPonto(const String& cardTag, const String& pin) {
+  JsonDocument doc;
+  carregarFila(doc);
+
+  JsonArray fila = doc.as<JsonArray>();
+
+  // Descarta o registro mais antigo se o limite for atingido.
+  if (fila.size() >= MAX_OFFLINE_QUEUE) {
+    fila.remove(0);
+  }
+
+  JsonObject ponto = fila.add<JsonObject>();
+  ponto["cardTag"] = cardTag;
+  ponto["pin"] = pin;
+
+  // Sem relogio sincronizado o servidor usa a hora em que receber o ponto.
+  if (relogioSincronizado()) {
+    ponto["recordedAt"] = instanteIsoUtc();
+  }
+
+  salvarFila(doc);
+}
+
+void enviarFila(bool detalhado) {
+  JsonDocument doc;
+  carregarFila(doc);
+
+  JsonArray fila = doc.as<JsonArray>();
+
+  if (fila.size() == 0) {
+    if (detalhado) {
+      Serial.println("Fila offline vazia.");
     }
-  }
-
-  return -1;
-}
-
-bool usuarioExiste(const String& uid) {
-  JsonDocument doc;
-
-  if (!carregarUsuarios(doc)) {
-    return false;
-  }
-
-  return buscarUsuario(doc, uid) >= 0;
-}
-
-bool salvarUsuario(
-  const String& uid,
-  const String& nome,
-  const String& hash
-) {
-  JsonDocument doc;
-
-  if (!carregarUsuarios(doc)) {
-    return false;
-  }
-
-  JsonArray usuarios = doc.as<JsonArray>();
-  int indice = buscarUsuario(doc, uid);
-
-  JsonObject usuario;
-
-  if (indice >= 0) {
-    // Atualiza o cadastro existente para o mesmo UID.
-    usuario = usuarios[indice].as<JsonObject>();
-  } else {
-    usuario = usuarios.add<JsonObject>();
-  }
-
-  usuario["uid"] = uid;
-  usuario["nome"] = nome;
-  usuario["hash"] = hash;
-
-  return salvarUsuarios(doc);
-}
-
-bool obterUsuario(
-  const String& uid,
-  String& nome,
-  String& hash
-) {
-  JsonDocument doc;
-
-  if (!carregarUsuarios(doc)) {
-    return false;
-  }
-
-  int indice = buscarUsuario(doc, uid);
-
-  if (indice < 0) {
-    return false;
-  }
-
-  nome = doc[indice]["nome"].as<String>();
-  hash = doc[indice]["hash"].as<String>();
-
-  return true;
-}
-
-void listarUsuarios() {
-  JsonDocument doc;
-
-  if (!carregarUsuarios(doc)) {
     return;
   }
 
-  JsonArray usuarios = doc.as<JsonArray>();
+  Serial.println("Enviando " + String(fila.size()) + " ponto(s) da fila offline...");
 
-  Serial.println();
-  Serial.println("===== USUARIOS CADASTRADOS =====");
+  int enviados = 0;
 
-  if (usuarios.size() == 0) {
-    Serial.println("Nenhum usuario cadastrado.");
+  while (fila.size() > 0) {
+    String corpo;
+    serializeJson(fila[0], corpo);
+
+    JsonDocument resposta;
+    int status = requisicaoApi("POST", "/device/punches", corpo, &resposta);
+
+    // Sem conexao ou erro do servidor: tenta de novo depois.
+    if (status <= 0 || status >= 500) {
+      break;
+    }
+
+    String tag = fila[0]["cardTag"].as<String>();
+
+    if (status == 201) {
+      enviados++;
+      Serial.println(
+        "  OK: " + resposta["employeeName"].as<String>() +
+        " as " + horaDe(resposta["record"]["recordedAt"].as<String>())
+      );
+    } else {
+      // 4xx nao vai mudar com nova tentativa (senha errada, duplicado...).
+      Serial.println("  Descartado (" + tag + "): " + mensagemDeErro(status, resposta));
+    }
+
+    fila.remove(0);
+    salvarFila(doc);
   }
 
-  for (JsonObject usuario : usuarios) {
+  Serial.println(
+    "Fila offline: " + String(enviados) + " enviado(s), " +
+    String(fila.size()) + " pendente(s)."
+  );
+}
+
+void listarFila() {
+  JsonDocument doc;
+  carregarFila(doc);
+
+  JsonArray fila = doc.as<JsonArray>();
+
+  Serial.println();
+  Serial.println("======= FILA OFFLINE =======");
+
+  if (fila.size() == 0) {
+    Serial.println("Nenhum ponto pendente.");
+  }
+
+  for (JsonObject ponto : fila) {
     Serial.println(
-      usuario["nome"].as<String>() +
-      " | UID: " +
-      usuario["uid"].as<String>()
+      ponto["cardTag"].as<String>() + " | " +
+      (ponto["recordedAt"] | "sem horario")
     );
   }
 
-  Serial.println("================================");
-}
-
-// =====================================================
-// 6. HISTORICO LOCAL DE PONTOS
-// =====================================================
-//
-// O historico e salvo na chave "pontos".
-// Mantemos os ultimos 30 registros neste prototipo
-// para limitar o uso da memoria NVS.
-// =====================================================
-
-void registrarPonto(
-  const String& uid,
-  const String& nome
-) {
-  JsonDocument doc;
-
-  String conteudo = memoria.getString("pontos", "[]");
-
-  if (deserializeJson(doc, conteudo)) {
-    doc.to<JsonArray>();
-  }
-
-  JsonArray pontos = doc.as<JsonArray>();
-
-  // Remove o registro mais antigo se o limite for atingido.
-  if (pontos.size() >= 30) {
-    pontos.remove(0);
-  }
-
-  JsonObject ponto = pontos.add<JsonObject>();
-
-  ponto["uid"] = uid;
-  ponto["nome"] = nome;
-  ponto["data_hora"] = obterDataHora();
-  ponto["uptime_ms"] = millis();
-
-  String novoConteudo;
-  serializeJson(doc, novoConteudo);
-
-  if (memoria.putString("pontos", novoConteudo) == 0 &&
-      novoConteudo.length() > 0) {
-    Serial.println("Erro ao salvar o historico.");
-    return;
-  }
-
-  Serial.println();
-  Serial.println("******** PONTO REGISTRADO ********");
-  Serial.println("Usuario: " + nome);
-  Serial.println("UID: " + uid);
-  Serial.println("Data/hora: " + obterDataHora());
-  Serial.println("**********************************");
-
-  bip(200);
-}
-
-void consultarHistorico() {
-  JsonDocument doc;
-
-  String conteudo = memoria.getString("pontos", "[]");
-
-  if (deserializeJson(doc, conteudo)) {
-    Serial.println("Erro ao ler o historico.");
-    return;
-  }
-
-  JsonArray pontos = doc.as<JsonArray>();
-
-  Serial.println();
-  Serial.println("======= HISTORICO DE PONTOS =======");
-
-  if (pontos.size() == 0) {
-    Serial.println("Nenhum ponto registrado.");
-  }
-
-  for (JsonObject ponto : pontos) {
-    Serial.println(
-      ponto["nome"].as<String>() +
-      " | " +
-      ponto["data_hora"].as<String>() +
-      " | UID: " +
-      ponto["uid"].as<String>()
-    );
-  }
-
-  Serial.println("===================================");
+  Serial.println("============================");
 }
 
 // =====================================================
@@ -416,6 +441,14 @@ void consultarHistorico() {
 // =====================================================
 
 bool lerTag(String& uid) {
+  // Tag digitada no Serial (comando "tag") para testar sem leitor.
+  if (tagSimulada.length() > 0) {
+    uid = tagSimulada;
+    tagSimulada = "";
+    Serial.println("UID simulado: " + uid);
+    return true;
+  }
+
   if (!rfid.PICC_IsNewCardPresent()) {
     return false;
   }
@@ -435,301 +468,481 @@ bool lerTag(String& uid) {
 }
 
 // =====================================================
-// 8. INICIAR OPERACOES
+// 8. BATER PONTO
 // =====================================================
 
-void iniciarCadastro() {
-  int indice = random(QUANTIDADE_NOMES);
+void iniciarPonto(const String& tag) {
+  tagAtual = tag;
+  nomeAtual = "";
 
-  nomeTemporario = NOMES_TESTE[indice];
+  JsonDocument resposta;
+  int status = requisicaoApi("GET", "/device/employees/" + tag, "", &resposta);
 
-  Serial.println();
-  Serial.println("[SIMULACAO DE DASHBOARD]");
-  Serial.println("Solicitacao recebida para cadastrar:");
-  Serial.println("Nome: " + nomeTemporario);
-  Serial.println("Aproxime uma tag RFID.");
+  if (status == 200) {
+    if (!resposta["isActive"].as<bool>()) {
+      Serial.println("Funcionario desativado. Procure o RH.");
+      bipErro();
+      voltarAoInicio();
+      return;
+    }
 
-  estado = LENDO_TAG_CADASTRO;
-}
-
-void iniciarPonto() {
-  Serial.println();
-  Serial.println("Modo de registro de ponto.");
-  Serial.println("Aproxime a tag RFID.");
-
-  estado = LENDO_TAG_PONTO;
-}
-
-void iniciarAlteracaoNome() {
-  Serial.println();
-  Serial.println("Modo de alteracao de nome.");
-  Serial.println("Aproxime a tag do usuario.");
-
-  estado = LENDO_TAG_NOME;
-}
-
-void iniciarTrocaSenha() {
-  Serial.println();
-  Serial.println("Modo de troca de senha.");
-  Serial.println("Aproxime a tag do usuario.");
-
-  estado = LENDO_TAG_TROCA_SENHA;
-}
-
-// =====================================================
-// 9. PROCESSAR MENU SERIAL
-// =====================================================
-
-void processarMenu() {
-  if (!Serial.available()) {
+    nomeAtual = resposta["fullName"].as<String>();
+    Serial.println("Ola, " + nomeAtual + "!");
+  } else if (status > 0) {
+    Serial.println("Nao foi possivel bater o ponto: " + mensagemDeErro(status, resposta));
+    bipErro();
+    voltarAoInicio();
     return;
-  }
-
-  String opcao = Serial.readStringUntil('\n');
-  opcao.trim();
-
-  if (opcao == "1") {
-    iniciarCadastro();
-  } else if (opcao == "2") {
-    iniciarPonto();
-  } else if (opcao == "3") {
-    listarUsuarios();
-    mostrarMenu();
-  } else if (opcao == "4") {
-    iniciarAlteracaoNome();
-  } else if (opcao == "5") {
-    iniciarTrocaSenha();
-  } else if (opcao == "6") {
-    consultarHistorico();
-    mostrarMenu();
-  } else if (opcao == "7") {
-    Serial.println("Data/hora: " + obterDataHora());
-    mostrarMenu();
   } else {
-    Serial.println("Opcao invalida.");
-    mostrarMenu();
+    Serial.println("Servidor indisponivel. O ponto sera salvo offline.");
   }
+
+  pinDigitado = "";
+  tentativasPin = 0;
+  prazoEstado = millis() + PIN_TIMEOUT_MS;
+  estado = DIGITANDO_PIN;
+
+  Serial.println("Digite a senha de 4 numeros no teclado.");
+  Serial.println("* apaga | D cancela");
+
+  bip(80);
 }
 
-// =====================================================
-// 10. CADASTRO DE USUARIO
-// =====================================================
+void enviarPonto() {
+  JsonDocument corpoDoc;
+  corpoDoc["cardTag"] = tagAtual;
+  corpoDoc["pin"] = pinDigitado;
 
-void processarCadastro() {
-  String uid;
+  if (relogioSincronizado()) {
+    corpoDoc["recordedAt"] = instanteIsoUtc();
+  }
 
-  if (!lerTag(uid)) {
+  String corpo;
+  serializeJson(corpoDoc, corpo);
+
+  Serial.println();
+
+  JsonDocument resposta;
+  int status = requisicaoApi("POST", "/device/punches", corpo, &resposta);
+
+  if (status == 201) {
+    bool saida = resposta["type"] == "exit";
+
+    Serial.println("******** PONTO REGISTRADO ********");
+    Serial.println("Usuario: " + resposta["employeeName"].as<String>());
+    Serial.println(String("Tipo: ") + (saida ? "SAIDA" : "ENTRADA"));
+    Serial.println("Hora: " + horaDe(resposta["record"]["recordedAt"].as<String>()));
+    Serial.println("Batida do dia: " + String(resposta["punchNumber"].as<int>()));
+    Serial.println("**********************************");
+
+    if (saida) {
+      bipSaida();
+    } else {
+      bipSucesso();
+    }
+
+    voltarAoInicio();
     return;
   }
 
-  if (usuarioExiste(uid)) {
-    Serial.println(
-      "Esta tag ja esta cadastrada. "
-      "Use Alterar nome ou Trocar senha."
-    );
+  if (status == 401) {
+    tentativasPin++;
+    bipErro();
 
-    bip(400);
-    estado = MENU;
-    mostrarMenu();
+    if (tentativasPin < MAX_PIN_ATTEMPTS) {
+      Serial.println(
+        mensagemDeErro(status, resposta) + ". Tente novamente (" +
+        String(tentativasPin) + "/" + String(MAX_PIN_ATTEMPTS) + ")."
+      );
+      pinDigitado = "";
+      prazoEstado = millis() + PIN_TIMEOUT_MS;
+      return;
+    }
+
+    Serial.println("Muitas tentativas. Aproxime o cartao novamente.");
+    voltarAoInicio();
     return;
   }
 
-  uidTemporario = uid;
-  senhaDigitada = "";
+  if (status > 0 && status < 500) {
+    Serial.println("Ponto nao registrado: " + mensagemDeErro(status, resposta));
+    bipErro();
+    voltarAoInicio();
+    return;
+  }
 
-  Serial.println("Nome: " + nomeTemporario);
-  Serial.println("Agora digite a senha pelo teclado.");
-  Serial.println("* apaga | # confirma");
+  enfileirarPonto(tagAtual, pinDigitado);
 
-  estado = DIGITANDO_SENHA_CADASTRO;
+  Serial.println("******** PONTO SALVO OFFLINE ********");
+  Serial.println("Sem conexao com o servidor.");
+  Serial.println("Data/hora: " + obterDataHora());
+  Serial.println("Sera enviado quando a conexao voltar.");
+  Serial.println("Pendentes na fila: " + String(tamanhoFila()));
+  Serial.println("*************************************");
 
-  bip(100);
+  bipSucesso();
+  voltarAoInicio();
 }
 
-// =====================================================
-// 11. ALTERAR NOME
-// =====================================================
-
-void processarAlteracaoNome() {
-  String uid;
-
-  if (!lerTag(uid)) {
-    return;
-  }
-
-  String nomeAntigo;
-  String hashAntigo;
-
-  if (!obterUsuario(uid, nomeAntigo, hashAntigo)) {
-    Serial.println("Usuario nao encontrado.");
-    estado = MENU;
-    mostrarMenu();
-    return;
-  }
-
-  int indice = random(QUANTIDADE_NOMES);
-  String novoNome = NOMES_TESTE[indice];
-
-  // Evita que o nome novo seja igual ao antigo.
-  if (novoNome == nomeAntigo) {
-    novoNome = "Usuario Atualizado";
-  }
-
-  if (salvarUsuario(uid, novoNome, hashAntigo)) {
-    Serial.println("Nome anterior: " + nomeAntigo);
-    Serial.println("Novo nome: " + novoNome);
-    Serial.println("Alteracao salva na memoria local.");
-    bip(200);
-  } else {
-    Serial.println("Erro ao alterar nome.");
-  }
-
-  estado = MENU;
-  mostrarMenu();
-}
-
-// =====================================================
-// 12. TROCAR SENHA
-// =====================================================
-
-void processarInicioTrocaSenha() {
-  String uid;
-
-  if (!lerTag(uid)) {
-    return;
-  }
-
-  String nome;
-  String hash;
-
-  if (!obterUsuario(uid, nome, hash)) {
-    Serial.println("Usuario nao encontrado.");
-    estado = MENU;
-    mostrarMenu();
-    return;
-  }
-
-  uidTemporario = uid;
-  senhaDigitada = "";
-
-  Serial.println("Usuario: " + nome);
-  Serial.println("Digite a nova senha.");
-  Serial.println("* apaga | # confirma");
-
-  estado = DIGITANDO_NOVA_SENHA;
-}
-
-// =====================================================
-// 13. TECLADO: CADASTRO E TROCA DE SENHA
-// =====================================================
-
-void processarSenha() {
+void processarTeclado() {
   char tecla = keypad.getKey();
 
   if (!tecla) {
     return;
   }
 
+  // Qualquer tecla renova o tempo para digitar.
+  prazoEstado = millis() + PIN_TIMEOUT_MS;
+
+  if (tecla == 'D') {
+    Serial.println();
+    Serial.println("Operacao cancelada.");
+    voltarAoInicio();
+    return;
+  }
+
   if (tecla == '*') {
-    senhaDigitada = "";
+    pinDigitado = "";
     Serial.println();
     Serial.println("Senha apagada.");
     return;
   }
 
-  if (tecla >= '0' && tecla <= '9') {
-    if (senhaDigitada.length() < 16) {
-      senhaDigitada += tecla;
-      Serial.print("*");
-    }
-    return;
+  if (tecla >= '0' && tecla <= '9' && pinDigitado.length() < PIN_LENGTH) {
+    pinDigitado += tecla;
+    Serial.print("*");
   }
 
-  if (tecla != '#') {
-    return;
-  }
-
-  if (senhaDigitada.length() == 0) {
+  // Confirma sozinho ao completar os 4 numeros (# tambem confirma).
+  if (pinDigitado.length() == PIN_LENGTH) {
+    enviarPonto();
+  } else if (tecla == '#') {
     Serial.println();
-    Serial.println("Digite uma senha primeiro.");
+    Serial.println("A senha tem " + String(PIN_LENGTH) + " numeros.");
+  }
+}
+
+// =====================================================
+// 9. LEITURA DE TAG PEDIDA PELO PAINEL
+// =====================================================
+//
+// No cadastro de funcionario, o painel cria um pedido em
+// POST /api/v1/card-reads. O relogio consulta os pedidos,
+// le a proxima tag e devolve o UID para o painel.
+// =====================================================
+
+void consultarPedidoDeLeitura() {
+  if (!passou(proximaConsulta)) {
     return;
   }
 
-  String hash = calcularHash(
-    uidTemporario,
-    senhaDigitada
-  );
+  JsonDocument resposta;
+  int status = requisicaoApi("GET", "/device/card-reads/pending", "", &resposta);
 
-  bool sucesso = false;
+  // Se o servidor nao responde, espera mais para nao travar o leitor.
+  proximaConsulta = millis() + (status > 0 ? POLL_INTERVAL_MS : POLL_BACKOFF_MS);
 
-  if (estado == DIGITANDO_SENHA_CADASTRO) {
-    sucesso = salvarUsuario(
-      uidTemporario,
-      nomeTemporario,
-      hash
-    );
-  } else if (estado == DIGITANDO_NOVA_SENHA) {
-    String nomeAtual;
-    String hashAtual;
+  if (status == 200) {
+    String id = resposta["id"].as<String>();
 
-    if (obterUsuario(uidTemporario, nomeAtual, hashAtual)) {
-      sucesso = salvarUsuario(
-        uidTemporario,
-        nomeAtual,
-        hash
+    if (estado == LENDO_TAG_CADASTRO && id == leituraId) {
+      return;
+    }
+
+    leituraId = id;
+    prazoEstado = millis() + CARD_READ_TIMEOUT_MS;
+    estado = LENDO_TAG_CADASTRO;
+
+    Serial.println();
+    Serial.println("[PAINEL] Cadastro de cartao solicitado.");
+    Serial.println("Aproxime a tag que sera vinculada ao funcionario.");
+
+    bip(80);
+    delay(80);
+    bip(80);
+  } else if (status == 204 && estado == LENDO_TAG_CADASTRO) {
+    Serial.println("[PAINEL] Leitura cancelada ou expirada.");
+    voltarAoInicio();
+  }
+}
+
+void enviarTagCadastro(const String& tag) {
+  JsonDocument corpoDoc;
+  corpoDoc["cardTag"] = tag;
+
+  String corpo;
+  serializeJson(corpoDoc, corpo);
+
+  JsonDocument resposta;
+  int status = requisicaoApi("POST", "/device/card-reads/" + leituraId, corpo, &resposta);
+
+  if (status == 200) {
+    Serial.println("Tag " + tag + " enviada ao painel.");
+
+    if (!resposta["assignedTo"].isNull()) {
+      Serial.println(
+        "Atencao: essa tag ja pertence a " +
+        resposta["assignedTo"]["fullName"].as<String>() + "."
       );
     }
-  }
 
-  senhaDigitada = "";
-
-  if (sucesso) {
-    Serial.println();
-    Serial.println("Operacao concluida com sucesso!");
-    Serial.println("Dados salvos na memoria persistente.");
-    bip(200);
+    bipSucesso();
   } else {
-    Serial.println();
-    Serial.println("Falha ao salvar os dados.");
-    bip(500);
+    Serial.println("Nao foi possivel enviar a tag: " + mensagemDeErro(status, resposta));
+    bipErro();
   }
 
-  estado = MENU;
-  mostrarMenu();
+  voltarAoInicio();
 }
 
 // =====================================================
-// 14. REGISTRAR PONTO
+// 10. CONFIGURACAO, WI-FI E SINCRONIZACAO
+// =====================================================
+//
+// Wi-Fi, servidor e chave ficam na NVS (namespace "ponto").
+// Sem nada salvo, valem os valores padrao do topo do arquivo.
 // =====================================================
 
-void processarPonto() {
-  String uid;
+void carregarConfiguracao() {
+  wifiSsid = memoria.getString("wifi_ssid", WIFI_SSID_PADRAO);
+  wifiSenha = memoria.getString("wifi_senha", WIFI_PASSWORD_PADRAO);
+  apiBaseUrl = memoria.getString("api_url", API_BASE_URL_PADRAO);
+  deviceApiKey = memoria.getString("api_chave", DEVICE_API_KEY_PADRAO);
+}
 
-  if (!lerTag(uid)) {
+void conectarWifi() {
+  // Canal fixo acelera a conexao no Wokwi; em rede real o canal e automatico.
+  int canal = wifiSsid == "Wokwi-GUEST" ? 6 : 0;
+
+  WiFi.disconnect();
+  WiFi.begin(wifiSsid.c_str(), wifiSenha.c_str(), canal);
+  proximaTentativaWifi = millis() + WIFI_RETRY_MS;
+
+  Serial.println("Conectando ao Wi-Fi \"" + wifiSsid + "\"...");
+}
+
+void manterWifi() {
+  bool conectado = wifiConectado();
+
+  if (conectado != wifiEstavaConectado) {
+    wifiEstavaConectado = conectado;
+
+    if (conectado) {
+      Serial.println("Wi-Fi conectado. IP: " + WiFi.localIP().toString());
+      proximaSincronizacao = millis();
+    } else {
+      Serial.println("Wi-Fi desconectado. Pontos serao salvos offline.");
+    }
+  }
+
+  if (!conectado && passou(proximaTentativaWifi)) {
+    WiFi.reconnect();
+    proximaTentativaWifi = millis() + WIFI_RETRY_MS;
+  }
+}
+
+void sincronizarEmSegundoPlano() {
+  if (!wifiConectado() || !passou(proximaSincronizacao)) {
     return;
   }
 
-  String nome;
-  String hash;
+  proximaSincronizacao = millis() + SYNC_INTERVAL_MS;
 
-  if (!obterUsuario(uid, nome, hash)) {
-    Serial.println("Tag nao cadastrada.");
-    bip(400);
-    estado = MENU;
-    mostrarMenu();
-    return;
+  sincronizarRelogioPeloServidor();
+
+  if (tamanhoFila() > 0) {
+    enviarFila(false);
   }
-
-  // Este menu de teste registra ponto apenas com a tag.
-  // Em producao, adicione a validacao de senha se exigida.
-  registrarPonto(uid, nome);
-
-  estado = MENU;
-  mostrarMenu();
 }
 
 // =====================================================
-// 15. SETUP
+// 11. COMANDOS SERIAL (DESENVOLVIMENTO / SIMULACAO)
+// =====================================================
+
+void mostrarAjuda() {
+  Serial.println();
+  Serial.println("================================");
+  Serial.println("       PONTO ELETRONICO");
+  Serial.println("================================");
+  Serial.println("Uso normal: aproxime o cartao e");
+  Serial.println("digite a senha no teclado.");
+  Serial.println();
+  Serial.println("Comandos pelo Serial:");
+  Serial.println("  tag AA:BB:CC:DD  simula um cartao");
+  Serial.println("  pin 1234         simula a senha");
+  Serial.println("  status           Wi-Fi, servidor e fila");
+  Serial.println("  fila             lista pontos offline");
+  Serial.println("  sync             envia a fila agora");
+  Serial.println("  limpar-fila      apaga a fila offline");
+  Serial.println("  hora             mostra data e hora");
+  Serial.println("  ajuda            mostra esta tela");
+  Serial.println();
+  Serial.println("Configuracao (fica salva):");
+  Serial.println("  wifi             pergunta nome e senha da rede");
+  Serial.println("  servidor URL     ex.: servidor http://192.168.0.10:8080/api/v1");
+  Serial.println("  chave CHAVE      DEVICE_API_KEY do backend");
+  Serial.println("  config           mostra a configuracao atual");
+  Serial.println("  reset-config     volta aos valores padrao");
+  Serial.println("================================");
+}
+
+// Espera uma linha no Serial (usado so nos comandos de configuracao).
+String lerLinhaSerial(unsigned long timeoutMs) {
+  unsigned long prazo = millis() + timeoutMs;
+
+  while (!passou(prazo)) {
+    if (Serial.available()) {
+      String linha = Serial.readStringUntil('\n');
+      linha.trim();
+      return linha;
+    }
+    delay(10);
+  }
+
+  return "";
+}
+
+void configurarWifi() {
+  Serial.print("Nome da rede (SSID): ");
+  String ssid = lerLinhaSerial(60000);
+  Serial.println(ssid);
+
+  if (ssid.length() == 0) {
+    Serial.println("Cancelado.");
+    return;
+  }
+
+  Serial.print("Senha (vazio se a rede for aberta): ");
+  String senha = lerLinhaSerial(60000);
+  Serial.println(senha.length() > 0 ? "********" : "(sem senha)");
+
+  memoria.putString("wifi_ssid", ssid);
+  memoria.putString("wifi_senha", senha);
+
+  carregarConfiguracao();
+  conectarWifi();
+}
+
+void mostrarConfiguracao() {
+  Serial.println();
+  Serial.println("========= CONFIGURACAO =========");
+  Serial.println("Wi-Fi: " + wifiSsid);
+  Serial.println("Servidor: " + apiBaseUrl);
+  Serial.println("Chave: " + deviceApiKey);
+  Serial.println("================================");
+}
+
+void mostrarStatus() {
+  JsonDocument resposta;
+  int status = requisicaoApi("GET", "/device/ping", "", &resposta);
+
+  Serial.println();
+  Serial.println("============ STATUS ============");
+  String wifi = wifiConectado()
+    ? "conectado (" + WiFi.localIP().toString() + ")"
+    : String("desconectado");
+  String servidor = status == 200
+    ? String("online")
+    : "offline (" + mensagemDeErro(status, resposta) + ")";
+
+  Serial.println("Wi-Fi: " + wifiSsid + " - " + wifi);
+  Serial.println("API: " + apiBaseUrl);
+  Serial.println("Servidor: " + servidor);
+  Serial.println("Data/hora: " + obterDataHora());
+  Serial.println("Fila offline: " + String(tamanhoFila()) + " ponto(s)");
+  Serial.println("================================");
+}
+
+void processarSerial() {
+  if (!Serial.available()) {
+    return;
+  }
+
+  String linha = Serial.readStringUntil('\n');
+  linha.trim();
+
+  if (linha.length() == 0) {
+    return;
+  }
+
+  int espaco = linha.indexOf(' ');
+  String comando = espaco < 0 ? linha : linha.substring(0, espaco);
+  String argumento = espaco < 0 ? "" : linha.substring(espaco + 1);
+
+  comando.toLowerCase();
+  argumento.trim();
+
+  if (comando == "tag") {
+    argumento.toUpperCase();
+
+    if (argumento.length() == 0) {
+      Serial.println("Uso: tag AA:BB:CC:DD");
+    } else if (estado == DIGITANDO_PIN) {
+      Serial.println("Termine a senha atual ou cancele com D.");
+    } else {
+      tagSimulada = argumento;
+    }
+  } else if (comando == "pin") {
+    if (estado != DIGITANDO_PIN) {
+      Serial.println("Nenhum cartao aguardando senha.");
+    } else if (argumento.length() != PIN_LENGTH) {
+      Serial.println("A senha tem " + String(PIN_LENGTH) + " numeros.");
+    } else {
+      pinDigitado = argumento;
+      enviarPonto();
+    }
+  } else if (comando == "status") {
+    mostrarStatus();
+  } else if (comando == "fila") {
+    listarFila();
+  } else if (comando == "sync") {
+    enviarFila(true);
+  } else if (comando == "limpar-fila") {
+    memoria.remove("fila");
+    Serial.println("Fila offline apagada.");
+  } else if (comando == "wifi") {
+    configurarWifi();
+  } else if (comando == "servidor") {
+    if (!argumento.startsWith("http://") && !argumento.startsWith("https://")) {
+      Serial.println("Uso: servidor http://IP_DO_COMPUTADOR:8080/api/v1");
+    } else {
+      while (argumento.endsWith("/")) {
+        argumento.remove(argumento.length() - 1);
+      }
+      memoria.putString("api_url", argumento);
+      carregarConfiguracao();
+      Serial.println("Servidor salvo: " + apiBaseUrl);
+      mostrarStatus();
+    }
+  } else if (comando == "chave") {
+    if (argumento.length() == 0) {
+      Serial.println("Uso: chave MINHA_CHAVE");
+    } else {
+      memoria.putString("api_chave", argumento);
+      carregarConfiguracao();
+      Serial.println("Chave salva.");
+    }
+  } else if (comando == "config") {
+    mostrarConfiguracao();
+  } else if (comando == "reset-config") {
+    memoria.remove("wifi_ssid");
+    memoria.remove("wifi_senha");
+    memoria.remove("api_url");
+    memoria.remove("api_chave");
+    carregarConfiguracao();
+    Serial.println("Configuracao padrao restaurada.");
+    conectarWifi();
+  } else if (comando == "hora") {
+    Serial.println("Data/hora: " + obterDataHora());
+  } else if (comando == "ajuda" || comando == "help" || comando == "menu") {
+    mostrarAjuda();
+  } else {
+    Serial.println("Comando desconhecido. Digite ajuda.");
+  }
+}
+
+// =====================================================
+// 12. SETUP
 // =====================================================
 
 void setup() {
@@ -741,8 +954,6 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
 
-  randomSeed(esp_random());
-
   SPI.begin();
   rfid.PCD_Init();
 
@@ -752,52 +963,65 @@ void setup() {
   Serial.println();
   Serial.println("Inicializando ponto eletronico...");
 
+  carregarConfiguracao();
+
   // O sistema nao fica preso esperando Wi-Fi.
   WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  conectarWifi();
 
-  configTime(
-    GMT_OFFSET,
-    DAYLIGHT_OFFSET,
-    "pool.ntp.org",
-    "time.google.com"
-  );
+  configTzTime(TIMEZONE, "pool.ntp.org", "time.google.com");
 
-  Serial.println("Sistema pronto.");
-  Serial.println("O cadastro e os pontos funcionam offline.");
+  Serial.println("Servidor: " + apiBaseUrl);
+  Serial.println("Sem conexao, os pontos ficam salvos e sao enviados depois.");
 
-  mostrarMenu();
+  mostrarAjuda();
+  voltarAoInicio();
 }
 
 // =====================================================
-// 16. LOOP PRINCIPAL
+// 13. LOOP PRINCIPAL
 // =====================================================
 
 void loop() {
+  manterWifi();
+  processarSerial();
+
+  String uid;
+
   switch (estado) {
-    case MENU:
-      processarMenu();
+    case AGUARDANDO_TAG:
+      if (lerTag(uid)) {
+        iniciarPonto(uid);
+        break;
+      }
+
+      consultarPedidoDeLeitura();
+      sincronizarEmSegundoPlano();
+      break;
+
+    case DIGITANDO_PIN:
+      processarTeclado();
+
+      if (estado == DIGITANDO_PIN && passou(prazoEstado)) {
+        Serial.println();
+        Serial.println("Tempo esgotado.");
+        bipErro();
+        voltarAoInicio();
+      }
       break;
 
     case LENDO_TAG_CADASTRO:
-      processarCadastro();
-      break;
+      if (lerTag(uid)) {
+        enviarTagCadastro(uid);
+        break;
+      }
 
-    case LENDO_TAG_PONTO:
-      processarPonto();
-      break;
+      consultarPedidoDeLeitura();
 
-    case LENDO_TAG_NOME:
-      processarAlteracaoNome();
-      break;
-
-    case LENDO_TAG_TROCA_SENHA:
-      processarInicioTrocaSenha();
-      break;
-
-    case DIGITANDO_SENHA_CADASTRO:
-    case DIGITANDO_NOVA_SENHA:
-      processarSenha();
+      if (estado == LENDO_TAG_CADASTRO && passou(prazoEstado)) {
+        Serial.println("[PAINEL] Nenhuma tag lida a tempo.");
+        voltarAoInicio();
+      }
       break;
   }
 }

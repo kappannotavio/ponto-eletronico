@@ -1,0 +1,66 @@
+.card-read {
+  display: grid;
+  gap: 8px;
+}
+
+.read-button {
+  justify-self: start;
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #1d4ed8;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.read-button:hover {
+  background: #eff6ff;
+}
+
+.read-button:focus-visible {
+  outline: 3px solid rgb(37 99 235 / 25%);
+  outline-offset: 2px;
+}
+
+.feedback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.feedback-info {
+  color: #1d4ed8;
+}
+
+.feedback-success {
+  color: #166534;
+}
+
+.feedback-warning {
+  color: #92400e;
+}
+
+.feedback-error {
+  color: #991b1b;
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

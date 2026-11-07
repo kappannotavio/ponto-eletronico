@@ -1,10 +1,14 @@
 
 <div class="dashboard">
-  <h1>Bom dia!</h1>
+  <h1>{{ greeting }}</h1>
 
   <p class="subtitle">
-    Acompanhe os registros de ponto da empresa.
+    Acompanhe os registros de ponto da empresa{{ data() ? ' em ' + formatDate(data()!.date) : '' }}.
   </p>
+
+  @if (error(); as message) {
+  <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
 
   <section class="resumo_funcionarios" aria-label="Filtrar marcações">
     <button type="button" class="indicador" [class.selected]="selectedFilter === 'present'" [attr.aria-pressed]="selectedFilter === 'present'" (click)="toggleFilter('present')">
@@ -24,7 +28,7 @@
   </section>
 
   <section class="registros">
-    <h2>Marcações de {{ dateLabel }} — demonstração</h2>
+    <h2>Marcações de hoje</h2>
     <table>
       <thead>
         <tr>
@@ -50,10 +54,7 @@
         }
       </tbody>
     </table>
-    <p class="data-note">Dados fictícios. Nesta demonstração, todos os funcionários ativos são esperados no dia indicado.
-      Uma entrada conta como presença; atraso usa tolerância zero e tem prioridade na situação exibida.
-      Sem marcação não significa falta. A duração bruta considera a primeira marcação do dia, sem descontar intervalos ou atravessar a meia-noite.
-      Calendário, múltiplas jornadas e regras definitivas ainda serão definidos.</p>
-
+    <p class="data-note">Atualiza sozinho a cada 15 segundos. Todos os funcionários ativos são esperados no dia; sem marcação não significa falta.
+      Atraso e hora extra consideram 10 minutos de tolerância. Horas trabalhadas descontam o intervalo de almoço.</p>
   </section>
 </div>

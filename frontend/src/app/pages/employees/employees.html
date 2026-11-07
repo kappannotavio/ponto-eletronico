@@ -9,6 +9,10 @@
     <input id="employee-search" name="employeeSearch" [(ngModel)]="searchTerm" type="text" placeholder="Digite aqui" />
   </section>
 
+  @if (error(); as message) {
+  <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+
   <section class="employee-table-panel" aria-label="Lista de funcionários">
     <div class="table-scroll">
       <table>
@@ -32,17 +36,17 @@
           </tr>
           } @empty {
           <tr>
-            <td colspan="5">Nenhum funcionário encontrado.</td>
+            <td colspan="5">{{ loading() ? 'Carregando…' : 'Nenhum funcionário encontrado.' }}</td>
           </tr>
           }
         </tbody>
       </table>
     </div>
-    <p class="data-note">Dados fictícios exibidos apenas para demonstração da interface.</p>
+    <p class="data-note">{{ employees().length }} funcionário(s) cadastrado(s). Funcionários desativados não conseguem bater o ponto.</p>
   </section>
 </section>
 
-@if (isEditModalOpen && editingEmployee; as employee) {
+@if (editingEmployee(); as employee) {
 <div class="modal-backdrop">
   <section #editDialog class="edit-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-title">
     <header class="dialog-header">
@@ -50,7 +54,7 @@
       <button class="close-button" type="button" (click)="closeEditModal()" aria-label="Fechar">×</button>
     </header>
 
-    <form class="edit-form">
+    <form class="edit-form" (ngSubmit)="saveEmployee()">
       <section class="form-section" aria-labelledby="edit-person-title">
         <h3 id="edit-person-title">Dados da pessoa</h3>
         <div class="field-grid">
@@ -72,13 +76,17 @@
       <section class="form-section" aria-labelledby="edit-clock-title">
         <h3 id="edit-clock-title">Identificação no relógio de ponto</h3>
         <div class="field-grid">
-          <div class="field"><label for="edit-card-tag">Cartão ou tag</label><input id="edit-card-tag" name="cardTag" [(ngModel)]="employee.cardTag" type="text" /></div>
-          <div class="field"><label for="edit-pin">Senha de 4 números</label><input id="edit-pin" name="pin" [(ngModel)]="employee.pin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" /></div>
+          <div class="field"><label for="edit-card-tag">Cartão ou tag</label><input id="edit-card-tag" name="cardTag" [(ngModel)]="employee.cardTag" type="text" /><app-card-read-button [employeeId]="employee.id" (cardRead)="employee.cardTag = $event" /></div>
+          <div class="field"><label for="edit-pin">Senha de 4 números</label><input id="edit-pin" name="pin" [(ngModel)]="employee.pin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" placeholder="••••" /><p class="field-hint">Deixe em branco para manter a senha atual.</p></div>
         </div>
       </section>
 
+      @if (editError(); as message) {
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+      }
+
       <div class="form-actions">
-        <button class="button button-primary" type="button" (click)="saveEmployee()">Salvar alterações</button>
+        <button class="button button-primary" type="submit" [disabled]="saving()">{{ saving() ? 'Salvando…' : 'Salvar alterações' }}</button>
         <button class="button button-secondary" type="button" (click)="closeEditModal()">Cancelar</button>
       </div>
     </form>

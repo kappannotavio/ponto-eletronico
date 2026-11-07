@@ -1,18 +1,61 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+
+import { Attendance, Dashboard as DashboardData, Employee } from '../../core/models';
 import { Dashboard } from './dashboard';
+
+function employee(id: number, fullName: string): Employee {
+  return {
+    id, fullName, jobTitle: '', whatsapp: '', startTime: '08:00', dailyHours: 8, lunchBreak: 60,
+    cardTag: `TAG-${id}`, isActive: true, createdAt: '', updatedAt: '',
+  };
+}
+
+function day(employeeId: number, changes: Partial<Attendance>): Attendance {
+  return {
+    employeeId, employeeName: '', date: '2026-11-06', entry: null, exit: null, workedMinutes: 0,
+    late: false, status: 'normal', times: [], records: [], ...changes,
+  };
+}
+
+// Funcionários ativos (a API já filtra os inativos com ?active=true).
+const employees = [employee(1, 'Ana Souza'), employee(3, 'Carla Mendes'), employee(4, 'Lucas Santos'), employee(5, 'Maria Oliveira')];
+
+const today: Attendance[] = [
+  day(1, { entry: '08:00', status: 'in_progress', times: ['08:00'] }),
+  day(4, { entry: '08:15', exit: '17:00', workedMinutes: 465, late: true, status: 'late' }),
+  day(5, { entry: '12:00', exit: '17:00', workedMinutes: 300, status: 'normal' }),
+];
 
 describe('Dashboard', () => {
   let component: Dashboard;
   let fixture: ComponentFixture<Dashboard>;
+  let http: HttpTestingController;
+
+  async function respond(days: Attendance[] = today, active: Employee[] = employees): Promise<void> {
+    // O primeiro carregamento sai do timer(0), depois de um tick.
+    await new Promise(resolve => setTimeout(resolve));
+    const dashboard: DashboardData = {
+      date: '2026-11-06', activeCount: active.length, presentCount: days.length,
+      lateCount: days.filter(item => item.late).length, absentCount: active.length - days.length, today: days,
+    };
+    http.expectOne('/api/v1/dashboard').flush(dashboard);
+    http.expectOne(request => request.url === '/api/v1/employees' && request.params.get('active') === 'true').flush(active);
+    await fixture.whenStable();
+  }
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [Dashboard],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
     }).compileComponents();
 
     fixture = TestBed.createComponent(Dashboard);
     component = fixture.componentInstance;
-    await fixture.whenStable();
+    http = TestBed.inject(HttpTestingController);
+    await respond();
   });
 
   it('should create', () => {
@@ -24,38 +67,16 @@ describe('Dashboard', () => {
     expect(component.rows.find(row => row.employeeId === 4)).toMatchObject({ present: true, late: true });
   });
 
-  it('excludes inactive employees both with and without an entry', () => {
-    component.records.push({ id: 20, employeeId: 2, date: component.consideredDate, entry: '09:15' });
-    expect(component.totals).toEqual({ present: 3, late: 1, missing: 1 });
-    expect(component.rows.some(row => row.employeeId === 2)).toBe(false);
-    component.employees.find(employee => employee.id === 1)!.isActive = false;
-    expect(component.totals).toEqual({ present: 2, late: 1, missing: 1 });
-  });
-
-  it('uses only valid entries on the considered day and counts employees once', () => {
-    component.records.push(
-      { id: 21, employeeId: 3, date: '2026-11-05', entry: '08:30' },
-      { id: 22, employeeId: 3, date: component.consideredDate, entry: '' },
-      { id: 23, employeeId: 1, date: component.consideredDate, entry: '09:00' },
-    );
-    expect(component.totals).toEqual({ present: 3, late: 1, missing: 1 });
-    expect(component.rows.find(row => row.employeeId === 1)?.entry).toBe('08:00');
-  });
-
-  it('uses zero tolerance without classifying missing entries as late', () => {
-    component.records[0].entry = '08:01';
-    expect(component.totals.late).toBe(2);
-    component.records[0].entry = '07:59';
-    expect(component.totals.late).toBe(1);
-    expect(component.rows.find(row => row.employeeId === 3)?.late).toBe(false);
-  });
-
-  it('displays each situation with lateness taking precedence over completion', () => {
-    expect(component.rows.map(row => row.status)).toEqual(['Em andamento', 'Sem marcação', 'Atraso', 'Registrado']);
+  it('displays each situation, including employees without entries', () => {
+    expect(component.rows.map(row => row.status)).toEqual(['Em andamento', 'Sem marcação', 'Atraso', 'Normal']);
     const table = fixture.nativeElement.querySelector('tbody').textContent;
-    for (const status of ['Em andamento', 'Sem marcação', 'Atraso', 'Registrado']) {
+    for (const status of ['Em andamento', 'Sem marcação', 'Atraso', 'Normal']) {
       expect(table).toContain(status);
     }
+  });
+
+  it('shows the worked hours calculated by the backend', () => {
+    expect(component.rows.map(row => row.duration)).toEqual(['—', '—', '07:45', '05:00']);
   });
 
   it('toggles each card filter and preserves totals', async () => {
@@ -76,31 +97,25 @@ describe('Dashboard', () => {
     cards[1].click();
     await fixture.whenStable();
     expect(element.querySelector('tbody')?.textContent).toContain('Lucas Santos');
-    cards[1].click();
-    await fixture.whenStable();
-    expect(component.selectedFilter).toBeNull();
-    expect(element.querySelectorAll('tbody tr').length).toBe(4);
   });
 
-  it('handles no entries without inferring absence or lateness and shows an empty filter', async () => {
-    component.records.splice(0);
+  it('handles a day without entries and shows an empty filter', async () => {
+    fixture = TestBed.createComponent(Dashboard);
+    component = fixture.componentInstance;
+    await respond([]);
     expect(component.totals).toEqual({ present: 0, late: 0, missing: 4 });
     expect(component.rows.every(row => row.status === 'Sem marcação' && row.duration === '—')).toBe(true);
     fixture.nativeElement.querySelector('.indicador').click();
     await fixture.whenStable();
     expect(fixture.nativeElement.querySelector('tbody').textContent).toContain('Nenhum funcionário');
-    component.employees.splice(0);
-    expect(component.totals).toEqual({ present: 0, late: 0, missing: 0 });
   });
 
-  it('calculates gross same-day durations without subtracting breaks or assuming overnight work', () => {
-    expect(component.duration(component.records[1])).toBe('08:45');
-    expect(component.duration(component.records[2])).toBe('05:00');
-    expect(component.duration(component.records[0])).toBe('—');
-    expect(component.duration()).toBe('—');
-    const record = component.records[1];
-    expect(component.duration({ ...record, entry: '22:00', exit: '06:00' })).toBe('—');
-    expect(component.duration({ ...record, exit: '25:00' })).toBe('—');
-    expect(component.duration({ ...record, entry: '08:00', exit: '08:00' })).toBe('00:00');
+  it('shows the API error message', async () => {
+    fixture = TestBed.createComponent(Dashboard);
+    await new Promise(resolve => setTimeout(resolve));
+    http.expectOne('/api/v1/dashboard').flush({ error: 'erro interno do servidor' }, { status: 500, statusText: 'Error' });
+    http.match(request => request.url === '/api/v1/employees');
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[role="alert"]').textContent).toContain('erro interno do servidor');
   });
 });

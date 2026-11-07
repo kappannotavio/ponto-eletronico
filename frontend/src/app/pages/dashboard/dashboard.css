@@ -156,6 +156,17 @@
 .registros td:nth-child(3) {
   text-align: center;
 }
+
+.status-normal {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.status-incompleto {
+  background-color: #e2e8f0;
+  color: #334155;
+}
+
 .indicador {
   font: inherit;
   text-align: left;

@@ -1,24 +1,60 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting, TestRequest } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+
+import { Attendance, Employee } from '../../core/models';
 import { TimeRecords } from './time-records';
+
+const employees = [1, 2, 3].map(id => ({
+  id, fullName: ['Ana Souza', 'Bruno Lima', 'Carla Mendes'][id - 1], jobTitle: '', whatsapp: '',
+  startTime: '08:00', dailyHours: 8, lunchBreak: 60, cardTag: `TAG-${id}`, isActive: true, createdAt: '', updatedAt: '',
+})) satisfies Employee[];
+
+function day(employeeId: number, date: string, times: string[], changes: Partial<Attendance> = {}): Attendance {
+  const complete = times.length % 2 === 0;
+  return {
+    employeeId, employeeName: employees[employeeId - 1].fullName, date, times, records: [],
+    entry: times[0] ?? null, exit: complete ? times[times.length - 1] : null,
+    workedMinutes: 0, late: false, status: complete ? 'normal' : 'in_progress', ...changes,
+  };
+}
+
+// A API devolve do dia mais recente para o mais antigo.
+const days: Attendance[] = [
+  day(1, '2026-11-06', ['08:00']),
+  day(3, '2026-11-05', ['08:30', '12:00', '13:00', '17:15'], { workedMinutes: 525, status: 'overtime' }),
+  day(2, '2026-11-05', ['09:12', '15:00'], { workedMinutes: 318, late: true, status: 'late' }),
+];
 
 describe('TimeRecords', () => {
   let component: TimeRecords;
   let fixture: ComponentFixture<TimeRecords>;
+  let http: HttpTestingController;
+
+  const attendanceRequest = (): TestRequest => http.expectOne(request => request.url === '/api/v1/attendance');
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [TimeRecords],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
     }).compileComponents();
 
     fixture = TestBed.createComponent(TimeRecords);
     component = fixture.componentInstance;
+    http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/v1/employees').flush(employees);
+    attendanceRequest().flush(days);
     await fixture.whenStable();
   });
+
+  afterEach(() => http.verify());
 
   it('should create', () => {
     expect(component).toBeTruthy();
   });
 
+  // Botão 0 é "Nova marcação"; os seguintes são o "Editar" de cada linha.
   async function openModal(index = 0): Promise<HTMLButtonElement> {
     const trigger = fixture.nativeElement.querySelectorAll('.button-edit')[index] as HTMLButtonElement;
     trigger.click();
@@ -27,9 +63,23 @@ describe('TimeRecords', () => {
     return trigger;
   }
 
+  function type(selector: string, value: string): void {
+    const input = fixture.nativeElement.querySelector(selector) as HTMLInputElement;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+  }
+
   it('focuses the first editable field after rendering', async () => {
     await openModal();
-    expect(document.activeElement?.id).toBe('edit-date');
+    expect(document.activeElement?.id).toBe('edit-employee');
+  });
+
+  it('skips read-only fields when editing an existing day', async () => {
+    await openModal(1);
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.querySelector<HTMLInputElement>('#edit-employee')!.readOnly).toBe(true);
+    expect(element.querySelector<HTMLInputElement>('#edit-date')!.readOnly).toBe(true);
+    expect(document.activeElement?.id).toBe('edit-entry');
   });
 
   it('wraps Tab at both ends and preserves native keys inside', async () => {
@@ -69,112 +119,116 @@ describe('TimeRecords', () => {
     }
   });
 
-
-  it('renders five records in descending date and entry order with simple durations', () => {
-    expect(component.filteredRecords.map(record => record.id)).toEqual([1, 3, 2, 5, 4]);
-    expect(fixture.nativeElement.querySelectorAll('tbody tr').length).toBe(5);
-    expect(component.duration(component.records[0])).toBe('—');
-    expect(component.duration(component.records[1])).toBe('08:45');
-    expect(component.duration(component.records[2])).toBe('05:48');
+  it('renders one row per employee and day, with the date column', () => {
+    const rows = fixture.nativeElement.querySelectorAll('tbody tr');
+    expect(rows.length).toBe(3);
+    expect(rows[0].textContent).toContain('06/11/2026');
+    expect(rows[1].textContent).toContain('08:45');
+    expect(rows[1].textContent).toContain('Hora extra');
+    expect(rows[2].textContent).toContain('Atraso');
   });
 
-  it('combines filters and clears them using the button', async () => {
+  it('sends the filters to the API and clears them using the button', async () => {
     const element = fixture.nativeElement as HTMLElement;
     const employee = element.querySelector<HTMLSelectElement>('#employee-filter')!;
     employee.selectedIndex = 1;
     employee.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-    expect(component.filteredRecords.map(record => record.id)).toEqual([1, 4]);
-    const date = element.querySelector<HTMLInputElement>('#date-filter')!;
-    date.value = '2026-11-04';
-    date.dispatchEvent(new Event('input'));
-    await fixture.whenStable();
-    expect(component.filteredRecords.map(record => record.id)).toEqual([4]);
-    date.value = '2026-11-05';
-    date.dispatchEvent(new Event('input'));
+    expect(attendanceRequest().request.params.get('employeeId')).toBe('1');
+
+    type('#date-filter', '2026-11-04');
+    const filtered = attendanceRequest();
+    expect(filtered.request.params.get('employeeId')).toBe('1');
+    expect(filtered.request.params.get('date')).toBe('2026-11-04');
+    filtered.flush([]);
     await fixture.whenStable();
     expect(element.querySelector('tbody')?.textContent).toContain('Nenhum registro');
+
     element.querySelector<HTMLButtonElement>('.button-clear')!.click();
+    const cleared = attendanceRequest();
+    expect(cleared.request.params.keys()).toEqual([]);
+    cleared.flush(days);
     await fixture.whenStable();
-    expect(component.employeeFilter).toBeNull();
-    expect(component.dateFilter).toBe('');
-    expect(element.querySelectorAll('tbody tr').length).toBe(5);
-    component.dateFilter = '2026-11-05';
-    expect(component.filteredRecords.map(record => record.id)).toEqual([3, 2]);
+    expect(component.filterEmployeeId()).toBeNull();
+    expect(component.filterDate()).toBe('');
+    expect(element.querySelectorAll('tbody tr').length).toBe(3);
   });
 
-  it('loads the selected record and discards its draft on cancel', async () => {
-    const original = { ...component.filteredRecords[1] };
-    await openModal(1);
-    expect(component.editingRecord).toEqual(original);
-    expect(component.editingRecord).not.toBe(component.records.find(record => record.id === original.id));
-    component.editingRecord!.entry = '10:00';
+  it('loads the selected day and keeps the break punches', async () => {
+    await openModal(2);
+    expect(component.editingDay()).toMatchObject({
+      mode: 'edit', employeeId: 3, date: '2026-11-05', entry: '08:30', exit: '17:15', middle: ['12:00', '13:00'],
+    });
     fixture.nativeElement.querySelector('.button-secondary').click();
     await fixture.whenStable();
-    expect(component.editingRecord).toBeNull();
-    expect(component.records.find(record => record.id === original.id)).toEqual(original);
+    expect(component.editingDay()).toBeNull();
   });
 
-  it('saves only the selected record through the form and recalculates duration', async () => {
-    const originals = component.records.map(record => ({ ...record }));
-    const id = component.filteredRecords[2].id;
+  it('saves the edited day through the API and reloads the list', async () => {
     await openModal(2);
-    const element = fixture.nativeElement as HTMLElement;
-    expect(element.querySelector<HTMLInputElement>('#edit-employee')!.readOnly).toBe(true);
-    expect(element.querySelector<HTMLInputElement>('#edit-status')!.readOnly).toBe(true);
-    for (const [field, value] of [['date', '2026-11-07'], ['entry', '10:00'], ['exit', '18:00']]) {
-      const input = element.querySelector<HTMLInputElement>(`#edit-${field}`)!;
-      input.value = value;
-      input.dispatchEvent(new Event('input'));
-    }
-    element.querySelector<HTMLButtonElement>('.button-primary')!.click();
+    type('#edit-exit', '18:00');
+    fixture.nativeElement.querySelector('.button-primary').click();
+
+    const save = http.expectOne({ method: 'PUT', url: '/api/v1/attendance/3/2026-11-05' });
+    expect(save.request.body).toEqual({ times: ['08:30', '12:00', '13:00', '18:00'] });
+    save.flush(days[1]);
+    attendanceRequest().flush(days);
     await fixture.whenStable();
-    const updated = component.records.find(record => record.id === id)!;
-    expect(updated).toEqual({ ...originals.find(record => record.id === id), date: '2026-11-07', entry: '10:00', exit: '18:00' });
-    expect(component.records.filter(record => record.id !== id)).toEqual(originals.filter(record => record.id !== id));
-    expect(component.duration(updated)).toBe('08:00');
-    expect(component.filteredRecords[0].id).toBe(id);
-    expect(element.querySelector('[role="dialog"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it('rejects invalid dates, malformed times and non-increasing same-day times', async () => {
-    await openModal(0);
-    const original = { ...component.records[0] };
+  it('rejects invalid dates, malformed times and non-increasing times', async () => {
+    await openModal(1);
+    const original = { ...component.editingDay()! };
     for (const changes of [
       { date: '' }, { date: '2026-02-30' }, { date: '0000-01-01' },
       { entry: '' }, { entry: '24:00' }, { exit: 'noon' },
       { exit: '08:00' }, { exit: '07:59' },
     ]) {
-      component.editingRecord = { ...original, ...changes };
-      component.saveRecord();
-      expect(component.isEditModalOpen).toBe(true);
-      expect(component.records[0]).toEqual(original);
+      component.editingDay.set({ ...original, ...changes });
+      component.saveDay();
+      expect(component.editingDay()).not.toBeNull();
       expect(Object.keys(component.editErrors).length).toBeGreaterThan(0);
     }
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('#exit-error')).not.toBeNull();
   });
 
-  it('allows clearing the optional exit while retaining the demonstration status', async () => {
-    await openModal(1);
-    const id = component.editingRecord!.id;
-    const status = component.editingRecord!.demonstrationStatus;
-    component.editingRecord!.exit = '';
-    component.saveRecord();
-    const updated = component.records.find(record => record.id === id)!;
-    expect(updated.exit).toBeUndefined();
-    expect(updated.demonstrationStatus).toBe(status);
-    expect(component.duration(updated)).toBe('—');
+  it('allows clearing the optional exit', async () => {
+    await openModal(3);
+    type('#edit-exit', '');
+    fixture.nativeElement.querySelector('.button-primary').click();
+    const save = http.expectOne({ method: 'PUT', url: '/api/v1/attendance/2/2026-11-05' });
+    expect(save.request.body).toEqual({ times: ['09:12'] });
+    save.flush(days[2]);
+    attendanceRequest().flush(days);
   });
 
-  it('focuses the clear button when saving removes a filtered row', async () => {
-    component.dateFilter = '2026-11-06';
+  it('adds new punches to the existing ones when creating', async () => {
+    await openModal(0);
+    component.editingDay.update(form => ({ ...form!, employeeId: 1, date: '2026-11-06', entry: '12:00', exit: '13:00' }));
+    component.saveDay();
+
+    const existing = attendanceRequest();
+    expect(existing.request.params.get('employeeId')).toBe('1');
+    existing.flush([days[0]]);
+    const save = http.expectOne({ method: 'PUT', url: '/api/v1/attendance/1/2026-11-06' });
+    expect(save.request.body).toEqual({ times: ['08:00', '12:00', '13:00'] });
+    save.flush(days[0]);
+    attendanceRequest().flush(days);
+  });
+
+  it('requires an employee when creating', async () => {
+    await openModal(0);
+    component.editingDay.update(form => ({ ...form!, entry: '08:00' }));
+    component.saveDay();
     fixture.detectChanges();
-    await openModal();
-    component.editingRecord!.date = '2026-11-07';
-    fixture.nativeElement.querySelector('.button-primary').click();
-    await fixture.whenStable();
-    expect(component.filteredRecords).toEqual([]);
-    expect(document.activeElement).toBe(fixture.nativeElement.querySelector('.button-clear'));
+    expect(fixture.nativeElement.querySelector('#employee-error')).not.toBeNull();
+  });
+
+  it('builds the report links from the current filters', () => {
+    component.setEmployeeFilter(2);
+    attendanceRequest().flush([]);
+    expect(component.csvUrl()).toBe('/api/v1/reports/attendance.csv?employeeId=2');
+    expect(component.pdfUrl()).toBe('/api/v1/reports/attendance.pdf?employeeId=2');
   });
 });

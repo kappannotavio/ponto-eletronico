@@ -1,11 +1,16 @@
-import { afterNextRender, Component, ElementRef, inject, Injector, viewChild } from '@angular/core';
+import { afterNextRender, Component, ElementRef, inject, Injector, signal, viewChild } from '@angular/core';
 
 import { FormsModule } from '@angular/forms';
 
-import { Employee } from '../../models/employee';
+import { CardReadButton } from '../../components/card-read-button/card-read-button';
+import { apiErrorMessage } from '../../core/api';
+import { EmployeeService } from '../../core/employee.service';
+import { Employee, EmployeeInput } from '../../core/models';
+
+type EmployeeForm = EmployeeInput & { readonly id: number };
 
 @Component({
-  imports: [FormsModule],
+  imports: [FormsModule, CardReadButton],
   host: {
     '(document:keydown.escape)': 'closeEditModal()',
     '(document:keydown)': 'trapModalFocus($event)',
@@ -15,48 +20,60 @@ import { Employee } from '../../models/employee';
   templateUrl: './employees.html',
 })
 export class Employees {
-  readonly employees: Employee[] = [
-    {
-      id: 1, fullName: 'Ana Souza', jobTitle: 'Recepcionista',
-      whatsapp: '11900000001', startTime: '08:00', dailyHours: 8,
-      lunchBreak: 60, cardTag: 'TAG-001', pin: '1001', isActive: true,
-    },
-    {
-      id: 2, fullName: 'Bruno Lima', jobTitle: 'Auxiliar administrativo',
-      whatsapp: '11900000002', startTime: '09:00', dailyHours: 6,
-      lunchBreak: 30, cardTag: 'TAG-002', pin: '1002', isActive: false,
-    },
-    {
-      id: 3, fullName: 'Carla Mendes', jobTitle: 'Assistente de loja',
-      whatsapp: '11900000003', startTime: '08:30', dailyHours: 8,
-      lunchBreak: 60, cardTag: 'TAG-003', pin: '1003', isActive: true,
-    },
-  ];
-  editingEmployee: Employee | null = null;
-  isEditModalOpen = false;
+  readonly employees = signal<Employee[]>([]);
+  readonly loading = signal(true);
+  readonly error = signal<string | null>(null);
+  readonly editingEmployee = signal<EmployeeForm | null>(null);
+  readonly editError = signal<string | null>(null);
+  readonly saving = signal(false);
   searchTerm = '';
 
   get filteredEmployees(): Employee[] {
     const search = this.searchTerm.toLowerCase();
 
-    return this.employees.filter(employee =>
+    return this.employees().filter(employee =>
       employee.fullName.toLowerCase().includes(search) ||
-      employee.jobTitle.toLowerCase().includes(search),
+      employee.jobTitle.toLowerCase().includes(search) ||
+      employee.cardTag.toLowerCase().includes(search),
     );
   }
 
+  private readonly employeeService = inject(EmployeeService);
   private readonly injector = inject(Injector);
   private readonly editDialog = viewChild<ElementRef<HTMLElement>>('editDialog');
   private editTrigger: HTMLElement | null = null;
 
+  constructor() {
+    this.loadEmployees();
+  }
+
+  loadEmployees(): void {
+    this.loading.set(true);
+    this.employeeService.list().subscribe({
+      next: employees => {
+        this.employees.set(employees);
+        this.error.set(null);
+        this.loading.set(false);
+      },
+      error: error => {
+        this.error.set(apiErrorMessage(error));
+        this.loading.set(false);
+      },
+    });
+  }
+
   toggleEmployeeStatus(employee: Employee): void {
-    employee.isActive = !employee.isActive;
+    this.employeeService.setActive(employee.id, !employee.isActive).subscribe({
+      next: updated => this.replaceEmployee(updated),
+      error: error => this.error.set(apiErrorMessage(error)),
+    });
   }
 
   openEditModal(event: MouseEvent, employee: Employee): void {
-    this.editingEmployee = { ...employee };
+    const { id, fullName, jobTitle, whatsapp, startTime, dailyHours, lunchBreak, cardTag } = employee;
+    this.editingEmployee.set({ id, fullName, jobTitle, whatsapp, startTime, dailyHours, lunchBreak, cardTag, pin: '' });
+    this.editError.set(null);
     this.editTrigger = event.currentTarget as HTMLElement;
-    this.isEditModalOpen = true;
 
     afterNextRender(() => {
       this.editDialog()?.nativeElement
@@ -66,21 +83,30 @@ export class Employees {
   }
 
   saveEmployee(): void {
-    if (!this.editingEmployee) return;
+    const form = this.editingEmployee();
+    if (!form || this.saving()) return;
 
-    const { id, ...changes } = this.editingEmployee;
-    const employee = this.employees.find(employee => employee.id === id);
-    if (!employee) return;
+    const { id, ...input } = form;
+    this.saving.set(true);
+    this.editError.set(null);
 
-    Object.assign(employee, changes);
-    this.closeEditModal();
+    this.employeeService.update(id, input).subscribe({
+      next: updated => {
+        this.saving.set(false);
+        this.replaceEmployee(updated);
+        this.closeEditModal();
+      },
+      error: error => {
+        this.saving.set(false);
+        this.editError.set(apiErrorMessage(error));
+      },
+    });
   }
 
   closeEditModal(): void {
-    if (!this.isEditModalOpen) return;
+    if (!this.editingEmployee()) return;
 
-    this.isEditModalOpen = false;
-    this.editingEmployee = null;
+    this.editingEmployee.set(null);
     this.editTrigger?.focus();
     this.editTrigger = null;
   }
@@ -88,7 +114,7 @@ export class Employees {
   trapModalFocus(event: KeyboardEvent): void {
     if (event.key !== 'Tab') return;
     const dialog = this.editDialog()?.nativeElement;
-    if (!this.isEditModalOpen || !dialog) return;
+    if (!this.editingEmployee() || !dialog) return;
 
     const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
       'input:not([type="hidden"]), select, textarea, button, a[href], [tabindex]',
@@ -105,5 +131,9 @@ export class Employees {
       event.preventDefault();
       first?.focus();
     }
+  }
+
+  private replaceEmployee(updated: Employee): void {
+    this.employees.update(employees => employees.map(employee => employee.id === updated.id ? updated : employee));
   }
 }

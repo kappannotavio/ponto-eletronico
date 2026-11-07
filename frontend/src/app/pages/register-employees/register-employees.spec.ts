@@ -1,19 +1,28 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+
 import { RegisterEmployees } from './register-employees';
 
 describe('RegisterEmployees', () => {
   let component: RegisterEmployees;
   let fixture: ComponentFixture<RegisterEmployees>;
+  let http: HttpTestingController;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [RegisterEmployees],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
     }).compileComponents();
 
     fixture = TestBed.createComponent(RegisterEmployees);
     component = fixture.componentInstance;
+    http = TestBed.inject(HttpTestingController);
     await fixture.whenStable();
   });
+
+  afterEach(() => http.verify());
 
   it('should create', () => {
     expect(component).toBeTruthy();
@@ -24,7 +33,7 @@ describe('RegisterEmployees', () => {
     startTime: '08:00', dailyHours: 8, lunchBreak: 60, cardTag: ' 00123 ', pin: '0012',
   };
 
-  it('rejects empty and whitespace-only required fields', () => {
+  it('rejects empty and whitespace-only required fields without calling the API', () => {
     component.form.patchValue({ fullName: '   ', cardTag: '  ' });
     expect(component.onSubmit()).toBeNull();
     expect(component.isInvalid('fullName')).toBe(true);
@@ -69,15 +78,32 @@ describe('RegisterEmployees', () => {
     expect(component.form.controls.lunchBreak.invalid).toBe(true);
   });
 
-  it('builds a JSON-ready payload preserving string identifiers and numeric options', () => {
+  it('sends a normalized payload to the API and resets the form on success', async () => {
     component.form.setValue(validValues);
     const payload = component.onSubmit();
-    expect(payload).toEqual({ ...validValues, fullName: 'Ana Souza', jobTitle: 'Analista',
-      whatsapp: '+5511999999999', cardTag: '00123' });
-    expect(JSON.parse(JSON.stringify(payload))).toEqual(payload);
-    expect(component.validated()).toBe(true);
+    const expected = { ...validValues, fullName: 'Ana Souza', jobTitle: 'Analista', whatsapp: '+5511999999999', cardTag: '00123' };
+    expect(payload).toEqual(expected);
+
+    const request = http.expectOne({ method: 'POST', url: '/api/v1/employees' });
+    expect(request.request.body).toEqual(expected);
+    request.flush({ ...expected, id: 1, isActive: true, createdAt: '', updatedAt: '' });
+    await fixture.whenStable();
+
+    expect(component.success()).toContain('Ana Souza');
+    expect(component.form.controls.fullName.value).toBe('');
     component.form.controls.fullName.setValue('Outro nome');
-    expect(component.validated()).toBe(false);
+    expect(component.success()).toBeNull();
+  });
+
+  it('keeps the data and shows the API error when saving fails', async () => {
+    component.form.setValue(validValues);
+    component.onSubmit();
+    http.expectOne('/api/v1/employees')
+      .flush({ error: 'a tag 00123 ja pertence a Carla Mendes' }, { status: 409, statusText: 'Conflict' });
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.querySelector('[role="alert"]').textContent).toContain('ja pertence a Carla Mendes');
+    expect(component.form.controls.fullName.value).toBe(validValues.fullName);
   });
 
   it('wires inputs, numeric selects, save and cancel to the form', async () => {
@@ -96,15 +122,20 @@ describe('RegisterEmployees', () => {
     expect(component.form.controls.fullName.value).toBe('Maria Souza');
     expect(component.form.controls.dailyHours.value).toBe(6);
     element.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+    http.expectOne('/api/v1/employees').flush({ error: 'erro' }, { status: 400, statusText: 'Bad Request' });
     await fixture.whenStable();
-    expect(element.querySelector('[role="status"]')?.textContent).toContain('ainda não enviados');
-    element.querySelector<HTMLButtonElement>('button[type="button"]')!.click();
+    element.querySelector<HTMLButtonElement>('.button-secondary')!.click();
     await fixture.whenStable();
     expect(component.form.getRawValue()).toEqual({ fullName: '', jobTitle: '', whatsapp: '',
       startTime: '', dailyHours: 4, lunchBreak: 0, cardTag: '', pin: '' });
     expect(component.form.pristine).toBe(true);
     expect(component.form.untouched).toBe(true);
     expect(element.querySelector('.field-error')).toBeNull();
-    expect(element.querySelector('[role="status"]')).toBeNull();
+    expect(element.querySelector('.alert')).toBeNull();
+  });
+
+  it('fills the card field with the tag read by the time clock', () => {
+    component.setCardTag('A1:B2:C3:D4');
+    expect(component.form.controls.cardTag.value).toBe('A1:B2:C3:D4');
   });
 });

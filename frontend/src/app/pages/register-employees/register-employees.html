@@ -72,10 +72,11 @@
       <div class="field-grid clock-grid">
         <div class="field">
           <label for="card-tag">Cartão ou tag *</label>
-          <input id="card-tag" name="cardTag" formControlName="cardTag" [class.invalid]="isInvalid('cardTag')" [attr.aria-invalid]="isInvalid('cardTag')" [attr.aria-describedby]="isInvalid('cardTag') ? 'cardTag-error' : null" type="text" required />
+          <input id="card-tag" name="cardTag" formControlName="cardTag" placeholder="Ex.: A1:B2:C3:D4" [class.invalid]="isInvalid('cardTag')" [attr.aria-invalid]="isInvalid('cardTag')" [attr.aria-describedby]="isInvalid('cardTag') ? 'cardTag-error' : null" type="text" required />
           @if (isInvalid('cardTag')) {
             <small class="field-error" id="cardTag-error">Informe o cartão ou tag.</small>
           }
+          <app-card-read-button (cardRead)="setCardTag($event)" />
         </div>
         <div class="field">
           <label for="pin">Senha de 4 números *</label>
@@ -83,17 +84,21 @@
           @if (isInvalid('pin')) {
             <small class="field-error" id="pin-error">Informe exatamente 4 dígitos numéricos.</small>
           }
+          <p class="field-hint">Digitada no teclado do relógio a cada batida de ponto.</p>
         </div>
       </div>
     </section>
 
-    @if (validated()) {
-      <p class="validation-message" role="status">Dados validados, mas ainda não enviados ao servidor.</p>
-    }
-
     <div class="form-actions">
-      <button class="button button-primary" type="submit">Salvar cadastro</button>
+      <button class="button button-primary" type="submit" [disabled]="saving()">{{ saving() ? 'Salvando…' : 'Salvar cadastro' }}</button>
       <button class="button button-secondary" type="button" (click)="onCancel()">Cancelar</button>
     </div>
+
+    @if (error(); as message) {
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+    }
+    @if (success(); as message) {
+      <p class="alert alert-success" role="status">{{ message }}</p>
+    }
   </form>
 </section>
