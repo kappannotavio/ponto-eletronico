@@ -31,21 +31,6 @@ a.button {
   background: #fef2f2;
 }
 
-.time-records-page .primary-text,
-.time-records-page .secondary-text {
-  display: block;
-}
-
-.time-records-page .primary-text {
-  font-weight: 600;
-}
-
-.time-records-page .secondary-text {
-  margin-top: 5px;
-  color: #64748b;
-  font-size: 13px;
-}
-
 /* Mensagens de retorno compartilhadas pelas páginas */
 .alert {
   margin: 16px 0 0;

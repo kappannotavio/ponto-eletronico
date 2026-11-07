@@ -1,3 +1,4 @@
+
 <div class="dashboard">
   <h1>{{ greeting }}</h1>
 
@@ -9,21 +10,21 @@
   <p class="alert alert-error" role="alert">{{ message }}</p>
   }
 
-  <section class="resumo_funcionarios">
-    <div class="indicador">
-      <h2>{{ data()?.presentCount ?? 0 }}</h2>
-      <p>Funcionários presentes</p>
-    </div>
+  <section class="resumo_funcionarios" aria-label="Filtrar marcações">
+    <button type="button" class="indicador" [class.selected]="selectedFilter === 'present'" [attr.aria-pressed]="selectedFilter === 'present'" (click)="toggleFilter('present')">
+      <span class="indicator-value">{{ totals.present }}</span>
+      <span class="indicator-label">Funcionários presentes</span>
+    </button>
 
-    <div class="indicador">
-      <h2>{{ data()?.lateCount ?? 0 }}</h2>
-      <p>Atrasos</p>
-    </div>
+    <button type="button" class="indicador" [class.selected]="selectedFilter === 'late'" [attr.aria-pressed]="selectedFilter === 'late'" (click)="toggleFilter('late')">
+      <span class="indicator-value">{{ totals.late }}</span>
+      <span class="indicator-label">Atrasos</span>
+    </button>
 
-    <div class="indicador">
-      <h2>{{ data()?.absentCount ?? 0 }}</h2>
-      <p>Sem marcação</p>
-    </div>
+    <button type="button" class="indicador" [class.selected]="selectedFilter === 'missing'" [attr.aria-pressed]="selectedFilter === 'missing'" (click)="toggleFilter('missing')">
+      <span class="indicator-value">{{ totals.missing }}</span>
+      <span class="indicator-label">Sem marcação</span>
+    </button>
   </section>
 
   <section class="registros">
@@ -40,22 +41,20 @@
       </thead>
 
       <tbody>
-        @for (day of data()?.today ?? []; track day.employeeId) {
-        <tr>
-          <td>{{ day.employeeName }}</td>
-          <td>{{ day.entry ?? '—' }}</td>
-          <td>{{ day.exit ?? '—' }}</td>
-          <td>{{ day.workedMinutes ? formatMinutes(day.workedMinutes) : '—' }}</td>
-          <td>
-            <span [class]="'status ' + statusClasses[day.status]">{{ statusLabels[day.status] }}</span>
-          </td>
-        </tr>
+        @for (row of filteredRows; track row.employeeId) {
+          <tr>
+            <td>{{ row.fullName }}</td>
+            <td>{{ row.entry }}</td>
+            <td>{{ row.exit }}</td>
+            <td>{{ row.duration }}</td>
+            <td><span [class]="'status ' + row.statusClass">{{ row.status }}</span></td>
+          </tr>
         } @empty {
-        <tr>
-          <td colspan="5">Nenhuma marcação registrada hoje.</td>
-        </tr>
+          <tr><td colspan="5">Nenhum funcionário corresponde ao filtro.</td></tr>
         }
       </tbody>
     </table>
+    <p class="data-note">Atualiza sozinho a cada 15 segundos. Todos os funcionários ativos são esperados no dia; sem marcação não significa falta.
+      Atraso e hora extra consideram 10 minutos de tolerância. Horas trabalhadas descontam o intervalo de almoço.</p>
   </section>
 </div>

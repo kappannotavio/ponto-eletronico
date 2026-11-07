@@ -144,3 +144,13 @@
     width: 100%;
   }
 }
+
+.field input.invalid,
+.field select.invalid {
+  border-color: #b91c1c;
+}
+
+.field-error {
+  color: #b91c1c;
+  font-size: 13px;
+}

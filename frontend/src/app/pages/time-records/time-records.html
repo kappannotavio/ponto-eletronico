@@ -18,7 +18,7 @@
       <label for="date-filter">Data</label>
       <input id="date-filter" name="date" type="date" [ngModel]="filterDate()" (ngModelChange)="setDateFilter($event)" />
     </div>
-    <button class="button button-clear" type="button" (click)="clearFilters()">Ver todas as marcações</button>
+    <button class="button button-clear" type="button" (click)="clearFilters()">Limpar filtros</button>
   </section>
 
   @if (error(); as message) {
@@ -35,6 +35,7 @@
         <thead>
           <tr>
             <th scope="col">Funcionário</th>
+            <th scope="col">Data</th>
             <th scope="col">Entrada</th>
             <th scope="col">Saída</th>
             <th scope="col">Horas trabalhadas</th>
@@ -45,7 +46,8 @@
         <tbody>
           @for (day of days(); track day.employeeId + day.date) {
           <tr>
-            <td><span class="primary-text">{{ day.employeeName }}</span><span class="secondary-text">{{ formatDate(day.date) }} · {{ day.times.length }} batida(s)</span></td>
+            <td>{{ day.employeeName }}</td>
+            <td>{{ formatDate(day.date) }}</td>
             <td>{{ day.entry ?? '—' }}</td>
             <td>{{ day.exit ?? '—' }}</td>
             <td>{{ day.workedMinutes ? formatMinutes(day.workedMinutes) : '—' }}</td>
@@ -54,7 +56,7 @@
           </tr>
           } @empty {
           <tr>
-            <td colspan="6">{{ loading() ? 'Carregando…' : 'Nenhuma marcação encontrada para o filtro.' }}</td>
+            <td colspan="7">{{ loading() ? 'Carregando…' : 'Nenhum registro corresponde aos filtros.' }}</td>
           </tr>
           }
         </tbody>
@@ -82,32 +84,44 @@
       <h2 id="edit-title">{{ day.mode === 'edit' ? 'Editar marcação' : 'Nova marcação' }}</h2>
       <button class="close-button" type="button" (click)="closeEditModal()" aria-label="Fechar">×</button>
     </header>
-    <form class="edit-form" (ngSubmit)="saveDay()">
+    <form class="edit-form" (ngSubmit)="saveDay()" novalidate>
       <div class="field-grid">
         <div class="field">
           <label for="edit-employee">Funcionário</label>
           @if (day.mode === 'edit') {
           <input id="edit-employee" name="employeeName" type="text" [value]="day.employeeName" readonly />
           } @else {
-          <select id="edit-employee" name="employee" [(ngModel)]="day.employeeId">
+          <select id="edit-employee" name="employee" [(ngModel)]="day.employeeId" [attr.aria-invalid]="editSubmitted && !!editErrors.employee" [attr.aria-describedby]="editSubmitted && editErrors.employee ? 'employee-error' : null">
             <option [ngValue]="null" disabled>Escolha…</option>
             @for (employee of employees(); track employee.id) {
             <option [ngValue]="employee.id">{{ employee.fullName }}</option>
             }
           </select>
+          @if (editSubmitted && editErrors.employee) {
+            <small id="employee-error" role="alert">{{ editErrors.employee }}</small>
+          }
           }
         </div>
         <div class="field">
           <label for="edit-date">Data</label>
-          <input id="edit-date" name="date" type="date" [(ngModel)]="day.date" [readonly]="day.mode === 'edit'" />
+          <input id="edit-date" name="date" type="date" [(ngModel)]="day.date" [readonly]="day.mode === 'edit'" [attr.aria-invalid]="editSubmitted && !!editErrors.date" [attr.aria-describedby]="editSubmitted && editErrors.date ? 'date-error' : null" />
+          @if (editSubmitted && editErrors.date) {
+            <small id="date-error" role="alert">{{ editErrors.date }}</small>
+          }
         </div>
         <div class="field">
           <label for="edit-entry">Horário de entrada</label>
-          <input id="edit-entry" name="entry" type="time" [(ngModel)]="day.entry" />
+          <input id="edit-entry" name="entry" type="time" [(ngModel)]="day.entry" [attr.aria-invalid]="editSubmitted && !!editErrors.entry" [attr.aria-describedby]="editSubmitted && editErrors.entry ? 'entry-error' : null" />
+          @if (editSubmitted && editErrors.entry) {
+            <small id="entry-error" role="alert">{{ editErrors.entry }}</small>
+          }
         </div>
         <div class="field">
           <label for="edit-exit">Horário de saída</label>
-          <input id="edit-exit" name="exit" type="time" [(ngModel)]="day.exit" />
+          <input id="edit-exit" name="exit" type="time" [(ngModel)]="day.exit" [attr.aria-invalid]="editSubmitted && !!editErrors.exit" [attr.aria-describedby]="editSubmitted && editErrors.exit ? 'exit-error' : null" />
+          @if (editSubmitted && editErrors.exit) {
+            <small id="exit-error" role="alert">{{ editErrors.exit }}</small>
+          }
         </div>
       </div>
 

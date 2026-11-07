@@ -35,13 +35,13 @@
   border: 1px solid #e2e8f0;
 }
 
-.indicador h2 {
+.indicator-value {
   margin: 0;
   font-size: 28px;
   color: #2563eb;
 }
 
-.indicador p {
+.indicator-label {
   margin-bottom: 0;
   color: #64748b;
 }
@@ -156,6 +156,7 @@
 .registros td:nth-child(3) {
   text-align: center;
 }
+
 .status-normal {
   background-color: #dcfce7;
   color: #166534;
@@ -164,4 +165,44 @@
 .status-incompleto {
   background-color: #e2e8f0;
   color: #334155;
+}
+
+.indicador {
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.indicator-value,
+.indicator-label {
+  display: block;
+}
+
+.indicator-value {
+  font-weight: 700;
+}
+
+.indicator-label {
+  margin-top: 16px;
+}
+
+.indicador.selected {
+  border-color: #2563eb;
+  background-color: #eff6ff;
+}
+
+.indicador:focus-visible {
+  outline: 3px solid rgb(37 99 235 / 25%);
+  outline-offset: 2px;
+}
+
+.status-sem-marcacao {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.data-note {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
 }

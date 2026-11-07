@@ -37,6 +37,7 @@ export class TimeRecords {
   readonly editingDay = signal<DayForm | null>(null);
   readonly editError = signal<string | null>(null);
   readonly saving = signal(false);
+  editSubmitted = false;
 
   readonly filterEmployeeId = signal<number | null>(null);
   readonly filterDate = signal('');
@@ -120,15 +121,38 @@ export class TimeRecords {
     });
   }
 
+  /** Erros do formulário de marcação, exibidos depois da primeira tentativa de salvar. */
+  get editErrors(): { employee?: string; date?: string; entry?: string; exit?: string } {
+    const form = this.editingDay();
+    if (!form) return {};
+
+    const errors: { employee?: string; date?: string; entry?: string; exit?: string } = {};
+    const date = new Date(`${form.date}T00:00:00Z`);
+    if (!form.employeeId) errors.employee = 'Escolha o funcionário.';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(form.date) || form.date.startsWith('0000') ||
+        Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== form.date) {
+      errors.date = 'Informe uma data válida.';
+    }
+
+    const entry = minutes(form.entry);
+    const exit = minutes(form.exit);
+    if (entry === null) errors.entry = 'Informe uma entrada válida (HH:mm).';
+    if (form.exit && exit === null) errors.exit = 'Informe uma saída válida (HH:mm).';
+    else if (exit !== null && entry !== null && exit <= entry) {
+      errors.exit = 'A saída deve ser posterior à entrada, no mesmo dia.';
+    }
+    return errors;
+  }
+
   saveDay(): void {
     const form = this.editingDay();
     if (!form || this.saving()) return;
 
+    this.editSubmitted = true;
+    if (Object.keys(this.editErrors).length) return;
+
     const { employeeId, date } = form;
-    if (!employeeId || !date) {
-      this.editError.set('Escolha o funcionário e a data.');
-      return;
-    }
+    if (!employeeId) return;
 
     const typed = [form.entry, ...form.middle, form.exit].filter(time => time);
 
@@ -183,6 +207,7 @@ export class TimeRecords {
   private openModal(event: MouseEvent, form: DayForm): void {
     this.editingDay.set(form);
     this.editError.set(null);
+    this.editSubmitted = false;
     this.editTrigger = event.currentTarget as HTMLElement;
 
     afterNextRender(() => {
@@ -212,4 +237,10 @@ export class TimeRecords {
   private currentFilter() {
     return { employeeId: this.filterEmployeeId(), date: this.filterDate() };
   }
+}
+
+function minutes(time: string): number | null {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return null;
+  const [hours, mins] = time.split(':').map(Number);
+  return hours * 60 + mins;
 }
