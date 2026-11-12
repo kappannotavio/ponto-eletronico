@@ -190,6 +190,11 @@ void processarSerial() {
       nova.chave = argumento;
       salvarConfigRede(nova);
       Serial.println("Chave salva.");
+
+      // Pontos retidos pela chave errada saem agora, sem esperar 30 s.
+      if (filaTamanho() > 0) {
+        filaEnviar(true);
+      }
     }
   } else if (comando == "config") {
     mostrarConfiguracao();

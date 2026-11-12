@@ -96,8 +96,12 @@ static void iniciarBatida(const String& cartao) {
 
   if (!funcionarioConhecido) {
     // Pode ser alguem cadastrado ha menos de 1 minuto: pergunta ao servidor.
+    // Sem servidor (ou com a chave do relogio errada) vale a lista local.
     JsonDocument resposta;
     int status = api("GET", "/device/employees/" + cartao, "", &resposta);
+    if (chaveInvalida(status, resposta)) {
+      Serial.println("X-Device-Key invalido. Corrija com: chave <valor>");
+    }
 
     if (status == 200) {
       atual.nome = resposta["fullName"] | "";
@@ -106,10 +110,7 @@ static void iniciarBatida(const String& cartao) {
     } else if (status == 404) {
       recusar("Cartao nao", "cadastrado", "cartao nao cadastrado");
       return;
-    } else if (chaveInvalida(status, resposta)) {
-      recusar("Chave do relogio", "invalida", "X-Device-Key invalido (confira a chave)");
-      return;
-    } else if (status > 0 && status < 500) {
+    } else if (status > 0 && status < 500 && !chaveInvalida(status, resposta)) {
       recusar("Erro no servidor", mensagemDeErro(status, resposta), mensagemDeErro(status, resposta));
       return;
     } else if (listaCarregada()) {

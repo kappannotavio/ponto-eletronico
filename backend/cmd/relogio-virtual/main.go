@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kappannotavio/ponto-eletronico/middleware"
 )
 
 const pollInterval = 2 * time.Second
@@ -62,6 +64,7 @@ func (c *client) request(method, path string, body, out any) (int, error) {
 
 type apiResponse struct {
 	Error        string `json:"error"`
+	Code         string `json:"code"`
 	ID           any    `json:"id"`
 	FullName     string `json:"fullName"`
 	IsActive     bool   `json:"isActive"`
@@ -229,6 +232,13 @@ func (c *clock) sendPunch(pin string) {
 		return
 	}
 
+	if invalidDeviceKey(status, resp) {
+		bell()
+		fmt.Println("x DEVICE_API_KEY diferente da do backend. Ponto nao registrado.")
+		c.reset()
+		return
+	}
+
 	if status == http.StatusUnauthorized {
 		c.attempts++
 		bell()
@@ -329,6 +339,12 @@ func (c *clock) pollCardReads() {
 		}
 		c.mu.Unlock()
 	}
+}
+
+// invalidDeviceKey separa a chave do relogio errada da senha errada,
+// que tambem volta 401.
+func invalidDeviceKey(status int, resp apiResponse) bool {
+	return status == http.StatusUnauthorized && resp.Code == middleware.InvalidDeviceKeyCode
 }
 
 func errorText(status int, resp apiResponse) string {
