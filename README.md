@@ -219,7 +219,7 @@ Se o backend usa outra `DEVICE_API_KEY`, rode também `chave SUA_CHAVE`. Pronto:
 |---------------------|----------------|
 | `Wi-Fi: desconectado` | senha errada, ou a rede é só 5 GHz (o ESP32 só funciona em **2.4 GHz**) |
 | `Servidor: offline (servidor indisponivel)` | IP errado, backend parado ou firewall bloqueando a porta 8080 |
-| `Servidor: offline (X-Device-Key invalido)` | chave diferente da do backend, use `chave ...` |
+| `Servidor: offline (X-Device-Key invalido)` | chave diferente da do backend, use `chave ...`. As batidas ficam na fila até lá |
 | `Tag nao cadastrada` | cadastre a tag no painel, usando o botão **Ler no relógio** |
 
 Para ver o UID de um cartão novo, basta aproximá-lo: o monitor serial mostra `UID detectado: AA:BB:CC:DD`.
@@ -313,7 +313,7 @@ Base: `http://localhost:8080/api/v1` (no front use só `/api/v1`, por causa do p
 | Status | Quando |
 |--------|--------|
 | `400` | validação (campo faltando, formato errado) |
-| `401` | senha incorreta ou `X-Device-Key` inválido |
+| `401` | senha incorreta, ou `X-Device-Key` inválido (este vem com `"code": "invalid_device_key"`) |
 | `403` | funcionário desativado tentando bater ponto |
 | `404` | recurso não encontrado / tag não cadastrada |
 | `409` | conflito: tag já usada, ponto duplicado, leitura que não está mais aguardando |
@@ -547,7 +547,13 @@ curl -X POST localhost:8080/api/v1/time-records \
 
 ### Rotas do dispositivo (ESP32)
 
-Todas exigem `X-Device-Key: <DEVICE_API_KEY>`; sem ela → `401`.
+Todas exigem `X-Device-Key: <DEVICE_API_KEY>`. Sem ela, ou com a chave errada → `401` com um `code` próprio:
+
+```json
+{ "error": "X-Device-Key invalido", "code": "invalid_device_key" }
+```
+
+O `code` separa a chave errada da senha errada (também `401`, mas sem `code`). O ESP32 descarta da fila offline a batida com senha errada, mas com `invalid_device_key` mantém a fila inteira e guarda as batidas novas nela. Tudo é enviado quando a chave for corrigida (`chave ...`).
 
 #### `GET /device/ping` → `200`
 
@@ -586,7 +592,7 @@ Resposta:
 
 `type` é `entry` ou `exit`; `punchNumber` é a posição da batida no dia.
 
-Erros: `404` tag não cadastrada · `401` senha incorreta · `403` desativado · `409` ponto repetido em menos de 1 min · `400` horário no futuro.
+Erros: `404` tag não cadastrada · `401` senha incorreta (ou `invalid_device_key`, veja acima) · `403` desativado · `409` ponto repetido em menos de 1 min · `400` horário no futuro.
 
 #### `GET /device/card-reads/pending`
 

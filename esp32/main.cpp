@@ -277,6 +277,14 @@ String mensagemDeErro(int status, JsonDocument& resposta) {
   return mensagem;
 }
 
+// A chave do relogio errada e a senha errada voltam 401.
+// O backend marca a primeira com "code": "invalid_device_key".
+// Nesse caso a batida nao e culpa do funcionario: guarda
+// na fila em vez de descartar.
+bool chaveDispositivoInvalida(int status, JsonDocument& resposta) {
+  return status == 401 && resposta["code"] == "invalid_device_key";
+}
+
 // Usa o horario do servidor quando o NTP nao responde
 // (comum em redes simuladas ou bloqueadas).
 void sincronizarRelogioPeloServidor() {
@@ -390,6 +398,12 @@ void enviarFila(bool detalhado) {
       break;
     }
 
+    // Chave errada: nenhuma batida vai passar ate corrigir.
+    if (chaveDispositivoInvalida(status, resposta)) {
+      Serial.println("  X-Device-Key invalido, fila mantida. Corrija com: chave <valor>");
+      break;
+    }
+
     String tag = fila[0]["cardTag"].as<String>();
 
     if (status == 201) {
@@ -399,7 +413,7 @@ void enviarFila(bool detalhado) {
         " as " + horaDe(resposta["record"]["recordedAt"].as<String>())
       );
     } else {
-      // 4xx nao vai mudar com nova tentativa (senha errada, duplicado...).
+      // Outro 4xx nao muda com nova tentativa (senha errada, duplicado...).
       Serial.println("  Descartado (" + tag + "): " + mensagemDeErro(status, resposta));
     }
 
@@ -488,6 +502,8 @@ void iniciarPonto(const String& tag) {
 
     nomeAtual = resposta["fullName"].as<String>();
     Serial.println("Ola, " + nomeAtual + "!");
+  } else if (chaveDispositivoInvalida(status, resposta)) {
+    Serial.println("X-Device-Key invalido. O ponto sera salvo offline.");
   } else if (status > 0) {
     Serial.println("Nao foi possivel bater o ponto: " + mensagemDeErro(status, resposta));
     bipErro();
@@ -545,7 +561,9 @@ void enviarPonto() {
     return;
   }
 
-  if (status == 401) {
+  bool chaveInvalida = chaveDispositivoInvalida(status, resposta);
+
+  if (status == 401 && !chaveInvalida) {
     tentativasPin++;
     bipErro();
 
@@ -564,7 +582,7 @@ void enviarPonto() {
     return;
   }
 
-  if (status > 0 && status < 500) {
+  if (status > 0 && status < 500 && !chaveInvalida) {
     Serial.println("Ponto nao registrado: " + mensagemDeErro(status, resposta));
     bipErro();
     voltarAoInicio();
@@ -574,9 +592,13 @@ void enviarPonto() {
   enfileirarPonto(tagAtual, pinDigitado);
 
   Serial.println("******** PONTO SALVO OFFLINE ********");
-  Serial.println("Sem conexao com o servidor.");
+  Serial.println(chaveInvalida
+    ? "X-Device-Key invalido, corrija com: chave <valor>"
+    : "Sem conexao com o servidor.");
   Serial.println("Data/hora: " + obterDataHora());
-  Serial.println("Sera enviado quando a conexao voltar.");
+  Serial.println(chaveInvalida
+    ? "Sera enviado quando a chave for corrigida."
+    : "Sera enviado quando a conexao voltar.");
   Serial.println("Pendentes na fila: " + String(tamanhoFila()));
   Serial.println("*************************************");
 
@@ -921,6 +943,11 @@ void processarSerial() {
       memoria.putString("api_chave", argumento);
       carregarConfiguracao();
       Serial.println("Chave salva.");
+
+      // Fila retida por chave errada sai agora, sem esperar 30 s.
+      if (tamanhoFila() > 0) {
+        enviarFila(true);
+      }
     }
   } else if (comando == "config") {
     mostrarConfiguracao();
