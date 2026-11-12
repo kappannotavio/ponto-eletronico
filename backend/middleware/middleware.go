@@ -64,7 +64,12 @@ func DeviceAuth(apiKey string, next http.HandlerFunc) http.HandlerFunc {
 		if subtle.ConstantTimeCompare([]byte(key), []byte(apiKey)) != 1 {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]string{"error": "X-Device-Key invalido"})
+			// "code" deixa o ESP32 diferenciar chave errada de senha errada
+			// (as duas sao 401) e nao descartar a fila offline.
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": "X-Device-Key invalido",
+				"code":  "invalid_device_key",
+			})
 			return
 		}
 

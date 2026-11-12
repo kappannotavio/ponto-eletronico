@@ -90,6 +90,7 @@ func main() {
 
 	// Relogio de ponto (ESP32) - exigem o header X-Device-Key
 	mux.HandleFunc("GET /api/v1/device/ping", device(deviceHandler.Ping))
+	mux.HandleFunc("GET /api/v1/device/employees", device(deviceHandler.ListEmployees))
 	mux.HandleFunc("GET /api/v1/device/employees/{cardTag}", device(deviceHandler.FindEmployeeByTag))
 	mux.HandleFunc("POST /api/v1/device/punches", device(deviceHandler.Punch))
 	mux.HandleFunc("GET /api/v1/device/card-reads/pending", device(deviceHandler.PendingCardRead))

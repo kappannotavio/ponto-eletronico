@@ -1,6 +1,11 @@
 package handler
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -38,6 +43,19 @@ type deviceEmployeeResponse struct {
 	IsActive bool   `json:"isActive"`
 }
 
+// deviceEmployeeListItem e o que o relogio guarda localmente para mostrar o
+// nome e conferir a senha mesmo sem conexao com o servidor.
+type deviceEmployeeListItem struct {
+	CardTag  string `json:"cardTag"`
+	FullName string `json:"fullName"`
+	IsActive bool   `json:"isActive"`
+	PinHash  string `json:"pinHash"`
+}
+
+type deviceEmployeeListResponse struct {
+	Employees []deviceEmployeeListItem `json:"employees"`
+}
+
 type completeCardReadRequest struct {
 	CardTag string `json:"cardTag"`
 }
@@ -51,6 +69,51 @@ func (h *DeviceHandler) Ping(w http.ResponseWriter, r *http.Request) {
 		ServerTime: now,
 		UnixTime:   now.Unix(),
 	})
+}
+
+// ListEmployees devolve todos os funcionarios (ativos e desativados) para o
+// relogio manter uma copia local. Responde 304 quando a lista nao mudou desde
+// o ETag enviado em If-None-Match, para o ESP32 nao baixar tudo de novo.
+func (h *DeviceHandler) ListEmployees(w http.ResponseWriter, r *http.Request) {
+	employees, err := h.employees.List(service.EmployeeFilter{})
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+
+	response := deviceEmployeeListResponse{
+		Employees: make([]deviceEmployeeListItem, 0, len(employees)),
+	}
+	for _, employee := range employees {
+		response.Employees = append(response.Employees, deviceEmployeeListItem{
+			CardTag:  employee.CardTag,
+			FullName: employee.FullName,
+			IsActive: employee.IsActive,
+			PinHash:  employee.PinHash,
+		})
+	}
+
+	var body bytes.Buffer
+	if err := json.NewEncoder(&body).Encode(response); err != nil {
+		log.Printf("encode device employees: %v", err)
+		writeJSON(w, http.StatusInternalServerError, errorResponse{"erro interno do servidor"})
+		return
+	}
+
+	sum := sha256.Sum256(body.Bytes())
+	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
+
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "no-cache")
+
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(body.Bytes())
 }
 
 func (h *DeviceHandler) FindEmployeeByTag(w http.ResponseWriter, r *http.Request) {
