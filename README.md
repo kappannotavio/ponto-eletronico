@@ -31,7 +31,7 @@ backend/                  API em Go (biblioteca padrão + go-pdf/fpdf para o PDF
   middleware/             log, CORS e autenticação do dispositivo
   model/                  structs que viram JSON
   report/                 geração do espelho de ponto em PDF
-  repository/             interfaces + implementação em memória
+  repository/             interfaces + SQLite (banco) e versão em memória (testes)
   service/                regras de negócio (e os testes)
 frontend/                 painel em Angular 22 (zoneless, signals)
   src/app/core/           models.ts, services HTTP, formatação
@@ -67,7 +67,7 @@ Esse comando instala as dependências do frontend se faltar, sobe o backend (com
 | `./dev.sh test` | testes do backend e do frontend |
 | `./dev.sh esp32` | compila o firmware (`upload` grava, `monitor` abre o serial) |
 | `./dev.sh punch [TAG] [PIN]` | bate um ponto de teste sem ESP32 (padrão `A1:B2:C3:D4 1234`) |
-| `SEED_DEMO_DATA=false ./dev.sh` | começa sem dados |
+| `SEED_DEMO_DATA=false ./dev.sh` | não cria os dados de exemplo (para zerar o banco, apague `backend/ponto.db`) |
 
 Os passos abaixo mostram como rodar cada parte manualmente.
 
@@ -90,6 +90,27 @@ Sobe em `http://localhost:8080`. Com `SEED_DEMO_DATA=true` o servidor já começ
 
 Teste rápido: `curl localhost:8080/api/v1/health` → `{"status":"ok"}`
 
+#### Banco de dados
+
+Os dados ficam num banco **SQLite**, que é um arquivo só: `ponto.db`, criado na pasta de onde o backend é executado (com `dev.sh`, fica em `backend/ponto.db`). O log mostra o caminho completo ao iniciar (`database: ...`).
+
+- **Não precisa instalar nada.** O driver ([modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite)) é escrito em Go puro e vai dentro do executável; não precisa de SQLite, gcc nem CGO.
+- As tabelas são criadas sozinhas na primeira execução.
+- **Backup:** pare o backend e copie o `ponto.db`. Para restaurar, coloque o arquivo de volta.
+- **Começar do zero:** pare o backend e apague o `ponto.db`.
+- Para abrir e consultar as tabelas, use qualquer visualizador de SQLite (por exemplo o [DB Browser for SQLite](https://sqlitebrowser.org/)). As datas ficam em UTC (`2026-11-12T11:02:00.000000000Z` = 08:02 em Brasília).
+- Pedidos de "Ler no relógio" continuam só em memória: duram no máximo 60 s e não precisam ser guardados.
+
+Para gerar um executável e levar para o PC que vai rodar o sistema (o PC não precisa ter Go):
+
+```bash
+cd backend
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o ponto.exe ./cmd/api   # Windows
+CGO_ENABLED=0 go build -o ponto ./cmd/api                                 # Linux
+```
+
+Ao abrir o `ponto.exe`, o `ponto.db` é criado na mesma pasta.
+
 #### Variáveis de ambiente
 
 | Variável | Padrão | Para que serve |
@@ -98,7 +119,8 @@ Teste rápido: `curl localhost:8080/api/v1/health` → `{"status":"ok"}`
 | `DEVICE_API_KEY` | `dev-device-key` | Chave que o ESP32 envia no header `X-Device-Key`. **Troque em produção** e atualize `DEVICE_API_KEY` no `esp32/main.cpp`. |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:4200` | Origens liberadas, separadas por vírgula. `*` libera todas. Só importa se o front não usar o proxy. |
 | `APP_TIMEZONE` | `America/Sao_Paulo` | Fuso usado para separar os dias e calcular horários |
-| `SEED_DEMO_DATA` | `false` | `true` cria dados de exemplo ao iniciar |
+| `SEED_DEMO_DATA` | `false` | `true` cria dados de exemplo ao iniciar (só se o banco estiver vazio) |
+| `DB_PATH` | `ponto.db` | Arquivo do banco SQLite. Pode ser um caminho completo, ex.: `C:\Ponto\ponto.db`. A pasta é criada se não existir. |
 
 ### 2. Frontend
 
@@ -226,7 +248,7 @@ Para ver o UID de um cartão novo, basta aproximá-lo: o monitor serial mostra `
 
 ### Dados de demonstração
 
-Com `SEED_DEMO_DATA=true`. Todos usam a senha **1234**.
+Com `SEED_DEMO_DATA=true`, criados só quando o banco está vazio (reiniciar não duplica nada). Todos usam a senha **1234**.
 
 | Funcionário | Tag | Entrada | Jornada |
 |-------------|-----|---------|---------|
@@ -255,7 +277,20 @@ sequenceDiagram
 - A senha é conferida **no backend**. São 3 tentativas por cartão.
 - As batidas do dia se alternam: 1ª entrada, 2ª saída, 3ª volta do almoço, 4ª saída...
 - Batidas da mesma tag com menos de 1 minuto de diferença são recusadas (`409`), para não registrar duas vezes.
-- **Sem conexão**, o ESP32 guarda o ponto na memória (NVS) com o horário e reenvia a cada 30 s. A senha só é validada quando o ponto chega ao servidor; se estiver errada, o ponto é descartado e aparece no log serial.
+- **Sem conexão**, o ESP32 guarda o ponto na memória (NVS) com o horário e reenvia a cada 30 s. A senha só é validada quando o ponto chega ao servidor; se estiver errada, o ponto é descartado e aparece no log serial. Veja [onde ficam os dados](#onde-ficam-os-dados).
+
+### Onde ficam os dados
+
+| Situação | Onde a batida fica |
+|----------|--------------------|
+| ESP32 alcança o backend | Direto no `ponto.db` do PC |
+| Wi-Fi caiu, PC desligado ou backend parado | Na memória flash do ESP32 (NVS, chave `fila`), que não se perde se ele desligar. Vai para o `ponto.db` quando o backend voltar a responder. |
+| Só a internet caiu | Nada muda: o ESP32 e o PC conversam pela rede local (Wi-Fi/roteador), sem precisar de internet |
+
+Cuidados com a fila do ESP32:
+
+- Guarda até **50 batidas** (`MAX_OFFLINE_QUEUE`). Passando disso, a mais antiga é descartada.
+- O horário é o do relógio do ESP32, acertado por NTP ou pelo backend. Se ele **reiniciar sem rede**, não sabe a hora, e a batida fica com o horário em que chegar ao servidor. Para evitar isso, dá para adicionar um módulo de relógio com bateria (RTC DS3231).
 
 ### Cadastrar o cartão de um funcionário
 
@@ -676,7 +711,7 @@ Bibliotecas (instaladas sozinhas pelo `platformio.ini`): ArduinoJson 7, MFRC522,
 ### Testes
 
 ```bash
-cd backend && go test ./...          # regras de negócio
+cd backend && go test ./...          # regras de negócio e banco (SQLite em pasta temporária)
 cd frontend && npx ng test --watch=false
 ```
 
@@ -709,11 +744,12 @@ curl -X POST $API/device/card-reads/$ID -H "$KEY" -d '{"cardTag":"12:34:56:78"}'
 
 - Para adicionar uma rota: handler em `handler/`, regra em `service/`, registre em `cmd/api/main.go`.
 - Erros de negócio: use `newError(KindX, "mensagem")` no service; o handler converte para o status HTTP certo.
-- Para trocar o armazenamento em memória por um banco, implemente as interfaces de `repository/` (`EmployeeRepository`, `TimeRecordRepository`) e troque no `main.go`. O resto não muda.
+- O banco é acessado só por `repository/`. Para mudar o schema, edite `repository/sqlite.go`: incremente `schemaVersion` e adicione o passo de migração em `migrate` (bancos já existentes são atualizados ao iniciar).
+- `repository/repository_test.go` roda os mesmos cenários na versão em memória e no SQLite; ao adicionar um método nas interfaces, cubra os dois.
 
 ## Limitações e próximos passos
 
-- **Dados em memória:** tudo some quando o backend reinicia. Próximo passo: banco (SQLite/PostgreSQL) implementando as interfaces de `repository/`.
+- **Banco local em um PC só:** o `ponto.db` fica no PC do backend. Faça backup copiando o arquivo; se o disco der problema sem backup, os dados se perdem.
 - **Painel sem login:** qualquer pessoa com acesso à rede usa o painel. Só as rotas do ESP32 têm autenticação.
 - **Um relógio por vez** para leitura de cartão: se houver vários ESP32 com a mesma chave, o primeiro que ler atende o pedido.
 - **Senha de 4 dígitos com SHA-256 + salt:** suficiente para não guardar em texto puro. A segurança vem de exigir o cartão físico junto.

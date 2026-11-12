@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"path/filepath"
 	"time"
 	_ "time/tzdata"
 
@@ -22,18 +23,30 @@ func main() {
 	}
 	time.Local = location
 
-	employeeRepository := repository.NewInMemoryEmployeeRepository()
-	timeRecordRepository := repository.NewInMemoryTimeRecordRepository()
+	db, err := repository.OpenSQLite(cfg.DatabasePath)
+	if err != nil {
+		log.Fatalf("database: %v", err)
+	}
+	defer db.Close()
+	log.Printf("database: %s", absPath(cfg.DatabasePath))
+
+	employeeRepository := repository.NewSQLiteEmployeeRepository(db)
+	timeRecordRepository := repository.NewSQLiteTimeRecordRepository(db)
 
 	employeeService := service.NewEmployeeService(employeeRepository)
 	timeRecordService := service.NewTimeRecordService(timeRecordRepository, employeeService)
 	cardReadService := service.NewCardReadService(employeeService)
 
 	if cfg.SeedDemoData {
-		if err := seedDemoData(employeeService, timeRecordRepository); err != nil {
+		seeded, err := seedDemoData(employeeService, timeRecordRepository)
+		if err != nil {
 			log.Fatalf("seed demo data: %v", err)
 		}
-		log.Println("demo data loaded")
+		if seeded {
+			log.Println("demo data loaded")
+		} else {
+			log.Println("demo data skipped: database already has employees")
+		}
 	}
 
 	employeeHandler := handler.NewEmployeeHandler(employeeService)
@@ -90,4 +103,11 @@ func main() {
 	if err := http.ListenAndServe(address, app); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func absPath(path string) string {
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return path
 }

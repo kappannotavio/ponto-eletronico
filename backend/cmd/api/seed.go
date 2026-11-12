@@ -10,7 +10,17 @@ import (
 
 // seedDemoData cria funcionarios e batidas de exemplo (SEED_DEMO_DATA=true).
 // Todos usam o PIN 1234. As batidas entram como vindas do relogio.
-func seedDemoData(employees *service.EmployeeService, timeRecords repository.TimeRecordRepository) error {
+// So roda com o banco vazio, para nao duplicar nada a cada reinicio;
+// devolve false quando ja havia funcionarios.
+func seedDemoData(employees *service.EmployeeService, timeRecords repository.TimeRecordRepository) (bool, error) {
+	existing, err := employees.List(service.EmployeeFilter{})
+	if err != nil {
+		return false, err
+	}
+	if len(existing) > 0 {
+		return false, nil
+	}
+
 	inputs := []service.EmployeeInput{
 		{FullName: "Ana Souza", JobTitle: "Recepcionista", Whatsapp: "11900000001", StartTime: "08:00", DailyHours: 8, LunchBreak: 60, CardTag: "A1:B2:C3:D4", Pin: "1234"},
 		{FullName: "Bruno Lima", JobTitle: "Auxiliar administrativo", Whatsapp: "11900000002", StartTime: "09:00", DailyHours: 6, LunchBreak: 30, CardTag: "B1:B2:B3:B4", Pin: "1234"},
@@ -21,7 +31,7 @@ func seedDemoData(employees *service.EmployeeService, timeRecords repository.Tim
 	for _, input := range inputs {
 		employee, err := employees.Create(input)
 		if err != nil {
-			return err
+			return false, err
 		}
 		created = append(created, employee)
 	}
@@ -55,10 +65,10 @@ func seedDemoData(employees *service.EmployeeService, timeRecords repository.Tim
 				CreatedAt:  now,
 			})
 			if err != nil {
-				return err
+				return false, err
 			}
 		}
 	}
 
-	return nil
+	return true, nil
 }

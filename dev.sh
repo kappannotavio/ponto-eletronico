@@ -130,7 +130,7 @@ Uso: ./dev.sh [comando]
                     (padrao: A1:B2:C3:D4 1234)
   help              mostra esta ajuda
 
-Variaveis: SEED_DEMO_DATA=false para comecar vazio, PORT, DEVICE_API_KEY.
+Variaveis: SEED_DEMO_DATA=false para nao criar dados de exemplo, DB_PATH (arquivo do banco, padrao backend/ponto.db), PORT, DEVICE_API_KEY.
 USAGE
 }
 

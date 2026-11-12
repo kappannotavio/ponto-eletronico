@@ -1,0 +1,9 @@
+# Banco de dados local (SQLite)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Executaveis gerados com go build
+/ponto
+/ponto.exe
