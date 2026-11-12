@@ -157,12 +157,12 @@ static String sha256Hex(const String& texto) {
     resumo
   );
 
-  static const char* hex = "0123456789abcdef";
+  static const char* digitos = "0123456789abcdef";
   String resultado = "";
   resultado.reserve(64);
-  for (uint8_t byte : resumo) {
-    resultado += hex[byte >> 4];
-    resultado += hex[byte & 0x0F];
+  for (uint8_t valor : resumo) {
+    resultado += digitos[valor >> 4];
+    resultado += digitos[valor & 0x0F];
   }
   return resultado;
 }
