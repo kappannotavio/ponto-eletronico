@@ -12,6 +12,7 @@ type Config struct {
 	CORSAllowedOrigins []string
 	Timezone           string
 	SeedDemoData       bool
+	DatabasePath       string
 }
 
 func Load() Config {
@@ -23,6 +24,7 @@ func Load() Config {
 		CORSAllowedOrigins: strings.Split(env("CORS_ALLOWED_ORIGINS", "http://localhost:4200"), ","),
 		Timezone:           env("APP_TIMEZONE", "America/Sao_Paulo"),
 		SeedDemoData:       seed,
+		DatabasePath:       env("DB_PATH", "ponto.db"),
 	}
 }
 

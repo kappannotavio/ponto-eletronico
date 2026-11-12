@@ -2,3 +2,5 @@
 ArduinoJson
 MFRC522
 Keypad
+LiquidCrystal I2C
+RTClib

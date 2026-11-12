@@ -56,6 +56,12 @@ func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 	}
 }
 
+// InvalidDeviceKeyCode vai no campo "code" do 401 de DeviceAuth. Separa a
+// chave do relogio errada da senha do funcionario errada (tambem 401): o
+// relogio descarta a batida com senha errada, mas guarda a fila quando o
+// problema e a propria chave.
+const InvalidDeviceKeyCode = "invalid_device_key"
+
 // DeviceAuth exige o header X-Device-Key nas rotas do relogio de ponto.
 func DeviceAuth(apiKey string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +70,10 @@ func DeviceAuth(apiKey string, next http.HandlerFunc) http.HandlerFunc {
 		if subtle.ConstantTimeCompare([]byte(key), []byte(apiKey)) != 1 {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]string{"error": "X-Device-Key invalido"})
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": "X-Device-Key invalido",
+				"code":  InvalidDeviceKeyCode,
+			})
 			return
 		}
 
