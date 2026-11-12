@@ -39,7 +39,7 @@ frontend/                 painel em Angular 22 (zoneless, signals)
   src/app/pages/          dashboard, employees, register-employees, time-records
   proxy.conf.json         encaminha /api para localhost:8080 no ng serve
 esp32/                    firmware do relógio
-  main.cpp                código do ESP32
+  src/                    código do ESP32, dividido em módulos (veja [ESP32](#esp32))
   platformio.ini          build com PlatformIO
   diagram.json            circuito para o Wokwi
   wokwi.toml              simulação no Wokwi para VS Code
@@ -116,7 +116,7 @@ Ao abrir o `ponto.exe`, o `ponto.db` é criado na mesma pasta.
 | Variável | Padrão | Para que serve |
 |----------|--------|----------------|
 | `PORT` | `8080` | Porta HTTP |
-| `DEVICE_API_KEY` | `dev-device-key` | Chave que o ESP32 envia no header `X-Device-Key`. **Troque em produção** e atualize `DEVICE_API_KEY` no `esp32/main.cpp`. |
+| `DEVICE_API_KEY` | `dev-device-key` | Chave que o ESP32 envia no header `X-Device-Key`. **Troque em produção** e configure a mesma chave no relógio (`chave` no `config.txt` do SD ou no monitor serial). |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:4200` | Origens liberadas, separadas por vírgula. `*` libera todas. Só importa se o front não usar o proxy. |
 | `APP_TIMEZONE` | `America/Sao_Paulo` | Fuso usado para separar os dias e calcular horários |
 | `SEED_DEMO_DATA` | `false` | `true` cria dados de exemplo ao iniciar (só se o banco estiver vazio) |
@@ -140,7 +140,7 @@ Não precisa de ESP32 de verdade para testar. Existem duas formas de simular:
 |---|---|---|
 | O que é | programa no terminal que faz o papel do ESP32 | simulador que roda o **firmware real** do ESP32 |
 | Precisa de | só Go | PlatformIO + extensão Wokwi no VS Code + conta Wokwi (grátis) |
-| Bom para | desenvolver o painel e o backend | testar mudanças no `esp32/main.cpp` |
+| Bom para | desenvolver o painel e o backend | testar mudanças no firmware (`esp32/src/`) |
 
 #### Opção A: relógio virtual (mais simples)
 
@@ -178,22 +178,22 @@ Para rodar:
 1. `./dev.sh` em um terminal (backend + painel).
 2. `./dev.sh esp32` para compilar o firmware. A primeira vez demora porque baixa o compilador do ESP32.
 3. No VS Code: **F1 → "Wokwi: Select Config File"** → escolha `esp32/wokwi.toml` (só na primeira vez).
-4. **F1 → "Wokwi: Start Simulator"**. Abre o circuito com o ESP32, o teclado e o buzzer.
+4. **F1 → "Wokwi: Start Simulator"**. Abre o circuito com o ESP32, teclado, LCD, RTC, cartão SD e buzzer (o RTC do Wokwi é um DS1307, compatível com o código do DS3231 para ler e acertar a hora).
 5. No monitor serial que aparece embaixo, simule o cartão (o Wokwi não tem leitor RFID):
    ```
    tag A1:B2:C3:D4
    ```
    e clique `1`, `2`, `3`, `4` no teclado do circuito (ou digite `pin 1234` no serial).
 
-Depois de alterar o `main.cpp`, rode `./dev.sh esp32` de novo e reinicie o simulador.
+Depois de alterar o firmware, rode `./dev.sh esp32` de novo e reinicie o simulador.
 
-No Wokwi para VS Code o endereço `host.wokwi.internal` aponta para o seu computador; é o que já está configurado em `API_BASE_URL`.
+No Wokwi para VS Code o endereço `host.wokwi.internal` aponta para o seu computador; é o que já está configurado em `API_URL_PADRAO` (`esp32/src/config.h`).
 
-> No **wokwi.com** (navegador) a simulação não alcança o seu `localhost`. Nesse caso exponha o backend com um túnel (ex.: `ngrok http 8080`) e troque `API_BASE_URL` pela URL gerada.
+> No **wokwi.com** (navegador) a simulação não alcança o seu `localhost`. Nesse caso exponha o backend com um túnel (ex.: `ngrok http 8080`) e troque `API_URL_PADRAO` pela URL gerada.
 
 #### Gravando em um ESP32 de verdade
 
-Não precisa mexer no código: Wi-Fi e servidor são configurados pelo monitor serial depois de gravar, e ficam salvos no ESP32 (sobrevivem a desligar e regravar).
+Não precisa mexer no código: Wi-Fi, servidor e chave são configurados depois de gravar, pelo **cartão SD** (`config.txt`) ou pelo monitor serial, e ficam salvos no ESP32 (sobrevivem a desligar e regravar).
 
 **1. Preparar o computador (uma vez)**
 
@@ -214,11 +214,24 @@ Ligue o ESP32 no USB e rode:
 
 Se aparecer `Connecting....` e não sair disso, segure o botão **BOOT** da placa até começar a gravar.
 
-**4. Conectar na internet e no servidor**
+**4. Conectar no Wi-Fi e no servidor**
 
-O backend precisa estar rodando em um computador **na mesma rede Wi-Fi** do ESP32. Descubra o IP desse computador (`ip -4 addr` no Linux, `ipconfig` no Windows), por exemplo `192.168.0.10`.
+O ESP32 entra na rede Wi-Fi como um celular faria e conversa com o PC do backend **pela rede local**. Não precisa de internet; ela só serve para acertar a hora por NTP (sem ela, a hora vem do PC e do RTC).
 
-No monitor serial:
+O backend precisa estar rodando em um computador **na mesma rede** do ESP32. Descubra o IP desse computador (`ip -4 addr` no Linux, `ipconfig` no Windows), por exemplo `192.168.0.10`, e **fixe esse IP no roteador** (reserva de DHCP). Se o IP do PC mudar, o relógio para de achar o servidor.
+
+**Jeito fácil: `config.txt` no cartão SD.** Ligue o relógio uma vez com o cartão: ele cria `config-exemplo.txt`. No PC, copie como `config.txt`, preencha e devolva o cartão:
+
+```
+wifi_ssid=MinhaRede
+wifi_senha=SenhaDaRede
+servidor=http://192.168.0.10:8080/api/v1
+chave=dev-device-key
+```
+
+O arquivo é lido sempre que o relógio liga e o que estiver nele vale por cima do que estava salvo. Campo vazio não muda nada (exceto `wifi_senha`, que vazio significa rede sem senha). O arquivo fica com a senha do Wi-Fi em texto: se preferir, apague-o depois do primeiro uso, porque a configuração continua salva no ESP32.
+
+**Pelo monitor serial**, se não tiver cartão SD:
 
 ```
 wifi
@@ -243,8 +256,10 @@ Se o backend usa outra `DEVICE_API_KEY`, rode também `chave SUA_CHAVE`. Pronto:
 | `Servidor: offline (servidor indisponivel)` | IP errado, backend parado ou firewall bloqueando a porta 8080 |
 | `Servidor: offline (X-Device-Key invalido)` | chave diferente da do backend, use `chave ...`. As batidas ficam na fila até lá |
 | `Tag nao cadastrada` | cadastre a tag no painel, usando o botão **Ler no relógio** |
+| `Leitor RFID: NAO ENCONTRADO` | fios do MFRC522 (SDA=D5, RST=D27) ou falta de 3.3 V. Se só falha com o SD encaixado, veja [cartão SD](#cartão-sd) |
+| `LCD: NAO ENCONTRADO` | SDA/SCL trocados ou o LCD sem 5 V (VIN) |
 
-Para ver o UID de um cartão novo, basta aproximá-lo: o monitor serial mostra `UID detectado: AA:BB:CC:DD`.
+Para ver o UID de um cartão novo, basta aproximá-lo: o monitor serial mostra `Cartao lido: AA:BB:CC:DD`.
 
 ### Dados de demonstração
 
@@ -265,32 +280,35 @@ sequenceDiagram
   participant F as Funcionário
   participant E as ESP32
   participant A as API
+  Note over E: lista de funcionários já baixada<br/>(GET /device/employees, a cada 1 min)
   F->>E: aproxima o cartão
-  E->>A: GET /device/employees/{tag}
-  A-->>E: nome do funcionário
+  E->>F: LCD mostra o nome
   F->>E: digita a senha (4 números)
   E->>A: POST /device/punches {cardTag, pin, recordedAt}
   A-->>E: 201 entrada/saída registrada
-  E->>F: bipe (1 = entrada, 2 = saída)
+  E->>F: LCD "ENTRADA 08:02" + bipe (1 = entrada, 2 = saída)
 ```
 
-- A senha é conferida **no backend**. São 3 tentativas por cartão.
+- O nome sai da **lista local** do relógio, sem esperar o servidor. Cartão fora da lista é conferido no servidor (pode ter sido cadastrado há menos de 1 minuto); se ele também não conhece, ou se não há conexão, o cartão é recusado na hora.
+- Com conexão, a senha é conferida **no backend**. Sem conexão, o relógio confere com o hash da senha que veio na lista. São 3 tentativas por cartão.
 - As batidas do dia se alternam: 1ª entrada, 2ª saída, 3ª volta do almoço, 4ª saída...
 - Batidas da mesma tag com menos de 1 minuto de diferença são recusadas (`409`), para não registrar duas vezes.
-- **Sem conexão**, o ESP32 guarda o ponto na memória (NVS) com o horário e reenvia a cada 30 s. A senha só é validada quando o ponto chega ao servidor; se estiver errada, o ponto é descartado e aparece no log serial. Veja [onde ficam os dados](#onde-ficam-os-dados).
+- **Sem conexão**, o ESP32 confere a senha, guarda o ponto na memória interna com o horário e reenvia a cada 30 s. O LCD mostra `PONTO OK` e, na tela inicial, `OFF` com quantos pontos estão guardados. Veja [onde ficam os dados](#onde-ficam-os-dados).
 
 ### Onde ficam os dados
 
 | Situação | Onde a batida fica |
 |----------|--------------------|
 | ESP32 alcança o backend | Direto no `ponto.db` do PC |
-| Wi-Fi caiu, PC desligado ou backend parado | Na memória flash do ESP32 (NVS, chave `fila`), que não se perde se ele desligar. Vai para o `ponto.db` quando o backend voltar a responder. |
+| Wi-Fi caiu, PC desligado ou backend parado | Na memória flash interna do ESP32 (`/fila.jsonl` no LittleFS), que não se perde se ele desligar. Vai para o `ponto.db` quando o backend voltar a responder. |
 | Só a internet caiu | Nada muda: o ESP32 e o PC conversam pela rede local (Wi-Fi/roteador), sem precisar de internet |
+| Sempre | Uma cópia de cada batida no cartão SD, em `/registros/AAAA-MM.csv` (abre no Excel), se houver cartão |
 
 Cuidados com a fila do ESP32:
 
-- Guarda até **50 batidas** (`MAX_OFFLINE_QUEUE`). Passando disso, a mais antiga é descartada.
-- O horário é o do relógio do ESP32, acertado por NTP ou pelo backend. Se ele **reiniciar sem rede**, não sabe a hora, e a batida fica com o horário em que chegar ao servidor. Para evitar isso, dá para adicionar um módulo de relógio com bateria (RTC DS3231).
+- Guarda até **2000 batidas** (`MAX_FILA_OFFLINE`). Cheia, a batida nova é recusada com `NAO SALVO / Memoria cheia` no LCD, em vez de apagar uma antiga sem ninguém ver.
+- O horário vem do RTC DS3231, que tem bateria e mantém a hora mesmo com o relógio desligado e sem rede. Ele é acertado sozinho pelo NTP ou pelo backend.
+- Batidas reenviadas que o servidor já tinha (`409`) contam como enviadas. Batidas recusadas no envio (senha trocada depois, funcionário desativado...) ficam registradas no CSV do SD como `descartado`.
 
 ### Cadastrar o cartão de um funcionário
 
@@ -375,6 +393,7 @@ Base: `http://localhost:8080/api/v1` (no front use só `/api/v1`, por causa do p
 | GET | `/card-reads/{id}` | painel | acompanha a leitura |
 | DELETE | `/card-reads/{id}` | painel | cancela a leitura |
 | GET | `/device/ping` | ESP32 | healthcheck + hora do servidor |
+| GET | `/device/employees` | ESP32 | lista para o relógio guardar (nome, situação, hash da senha) |
 | GET | `/device/employees/{cardTag}` | ESP32 | identifica o dono da tag |
 | POST | `/device/punches` | ESP32 | bate o ponto |
 | GET | `/device/card-reads/pending` | ESP32 | pedido de leitura em aberto |
@@ -598,6 +617,21 @@ O `code` separa a chave errada da senha errada (também `401`, mas sem `code`). 
 
 O ESP32 usa `unixTime` para acertar o relógio quando o NTP não responde.
 
+#### `GET /device/employees` → `200` ou `304`
+
+Lista completa, ativos e desativados, para o relógio guardar e funcionar sem conexão:
+
+```json
+{ "employees": [
+  { "cardTag": "A1:B2:C3:D4", "fullName": "Ana Souza", "isActive": true,
+    "pinHash": "af84...3f39$57ec...2949" }
+] }
+```
+
+A resposta tem `ETag`. Com `If-None-Match` igual (lista não mudou) → `304` sem corpo. O ESP32 consulta a cada minuto.
+
+`pinHash` é `salt$sha256(salt + ":" + pin)` em hexadecimal, o mesmo formato guardado no banco.
+
 #### `GET /device/employees/{cardTag}` → `200`
 
 ```json
@@ -645,35 +679,97 @@ Erros: `404` tag não cadastrada · `401` senha incorreta (ou `invalid_device_ke
 
 ### Pinagem
 
-| Componente | Pino do componente | GPIO do ESP32 |
-|------------|--------------------|---------------|
-| MFRC522 | SDA (SS) | 5 |
-| MFRC522 | SCK | 18 |
-| MFRC522 | MOSI | 23 |
-| MFRC522 | MISO | 19 |
-| MFRC522 | RST | 21 |
-| MFRC522 | 3.3V / GND | 3V3 / GND |
-| Teclado 4x4 | linhas R1–R4 | 13, 12, 14, 27 |
-| Teclado 4x4 | colunas C1–C4 | 26, 25, 33, 32 |
-| Buzzer | + / − | 17 / GND |
+| Componente | Pino do componente | ESP32 |
+|------------|--------------------|-------|
+| RFID MFRC522 | SDA (SS) / SCK / MOSI / MISO | D5 / D18 / D23 / D19 |
+| RFID MFRC522 | RST / IRQ | D27 / não ligado |
+| RFID MFRC522 | 3.3V / GND | 3V3 / GND |
+| Cartão SD | CS / SCK / MOSI (DI) / MISO (DO) | D4 / D18 / D23 / D19 |
+| Cartão SD | VCC / GND | 3V3 / GND (veja abaixo) |
+| LCD 16x2 I2C | SDA / SCL | D21 / D22 |
+| LCD 16x2 I2C | VCC / GND | VIN (5 V) / GND |
+| RTC DS3231 | SDA / SCL / SQW | D21 / D22 / não ligado |
+| RTC DS3231 | VCC / GND | **3V3** / GND (veja abaixo) |
+| Teclado 4x4 | linhas R1 / R2 / R3 / R4 | VP (36) / VN (39) / D34 / D35 |
+| Teclado 4x4 | colunas C1 / C2 / C3 / C4 | D32 / D33 / D25 / D26 |
+| Resistores 10 kΩ | um em cada linha do teclado (36, 39, 34, 35) | para 3V3 |
+| Buzzer ativo (opcional) | + / − | D17 / GND |
 
-> O MFRC522 é **3.3 V**. Não ligue no 5 V.
+Os pinos ficam em `esp32/src/config.h`.
+
+- **Barramento SPI dividido:** o RFID e o SD usam os mesmos SCK/MOSI/MISO, cada um com seu CS (D5 e D4).
+- **Barramento I2C dividido:** o LCD e o RTC usam os mesmos SDA/SCL, cada um com seu endereço (LCD 0x27 ou 0x3F, detectado sozinho; RTC 0x68).
+- **Teclado nos pinos 34–39:** esses pinos só funcionam como entrada e não têm pull-up interno. Por isso as linhas do teclado vão neles com os resistores de 10 kΩ para 3V3, e as colunas, que precisam ser saída, vão em 32/33/25/26.
+- O MFRC522 é **3.3 V**. Não ligue no 5 V.
+
+#### Cuidados com a alimentação
+
+- **RTC no 3V3, não no 5 V.** O módulo DS3231 tem resistores que puxam SDA/SCL para a própria alimentação. No 5 V, os pinos 21/22 do ESP32 (que são de 3.3 V) recebem 5 V. Ele funciona igual no 3V3.
+- **Módulo DS3231 azul (ZS-042) com pilha CR2032:** essa placa tenta carregar a pilha, que não é recarregável. Use uma LIR2032 (recarregável) ou tire o resistor/diodo de carga da placa.
+- **LCD no VIN (5 V):** o LCD precisa de 5 V para ter contraste. Se o módulo I2C dele tiver resistores de pull-up, SDA/SCL também ficam em 5 V. Costuma funcionar, mas o certo é um conversor de nível lógico I2C (3.3 V ↔ 5 V) entre o ESP32 e o LCD. Se o texto não aparecer, gire o trimpot azul atrás do LCD (contraste).
+- **VIN só tem 5 V com o ESP32 alimentado pelo USB** (ou por uma fonte de 5 V no próprio VIN).
+
+#### Cartão SD
+
+- Formate em **FAT32**. Cartões até 32 GB.
+- O pino do módulo marcado **3V3** vai no 3V3. Se o seu módulo tiver só um pino **VCC** e um regulador (componente de 3 pernas, AMS1117) na placa, ele precisa de **5 V** (VIN): com 3.3 V o regulador entrega menos de 3 V e o cartão falha.
+- Alguns módulos baratos com chip conversor de nível (74LVC125) não soltam o MISO, e o RFID para de funcionar com o SD ligado. Se acontecer, use um módulo sem esse chip, ou passe o SD para o segundo barramento SPI do ESP32 (pinos 14, 12, 13 e 15, livres nessa ligação), o que exige mudar `cartao_sd.cpp`.
+- O SD é opcional: sem ele, o relógio funciona igual e só não grava o histórico.
+
+### Arquivos do firmware
+
+```
+esp32/src/
+  main.cpp              setup(), loop() e tarefas de fundo (enviar fila, baixar lista)
+  config.h              pinos, tempos e valores padrão
+  ponto.cpp             fluxo de bater ponto e de ler cartão para cadastro
+  funcionarios.cpp      lista local de funcionários e conferência da senha
+  fila_offline.cpp      pontos guardados sem conexão (memória interna)
+  cartao_sd.cpp         histórico CSV e config.txt no cartão SD
+  rede.cpp              Wi-Fi, configuração salva e chamadas à API
+  relogio.cpp           hora: RTC DS3231, NTP e servidor
+  display.cpp           LCD 16x2
+  perifericos.cpp       leitor RFID, teclado e buzzer
+  comandos_serial.cpp   comandos do monitor serial
+```
+
+| Onde | O que guarda |
+|------|--------------|
+| Memória interna (LittleFS, ~900 KB) | `/fila.jsonl` (pontos sem conexão) e `/funcionarios.json` (lista baixada) |
+| NVS do ESP32 | Wi-Fi, servidor e chave |
+| Cartão SD | `/config.txt`, `/config-exemplo.txt` e `/registros/AAAA-MM.csv` |
+
+A fila e a lista ficam na memória interna, e não no SD, porque têm senhas e porque o relógio não pode parar se o cartão falhar ou for retirado.
+
+O CSV do SD tem uma linha por evento: `data;hora;cartao;funcionario;situacao;detalhe`, com `situacao` igual a `registrado`, `offline`, `enviado`, `descartado`, `recusado` ou `perdido`.
 
 ### Uso no relógio
 
 | Ação | Como |
 |------|------|
-| Bater ponto | aproxime o cartão e digite os 4 números (confirma sozinho no 4º dígito) |
+| Bater ponto | aproxime o cartão, confira o nome no LCD e digite os 4 números (confirma sozinho no 4º dígito) |
 | Apagar a senha digitada | `*` |
 | Cancelar | `D` |
 | Tempo para digitar | 15 s, renovado a cada tecla |
 
+| LCD | Significado |
+|-----|-------------|
+| `Aproxime cartao` / `14:05:32  ON` | pronto; conectado ao servidor |
+| `14:05:32  OFF 3` | sem servidor; 3 pontos guardados para enviar |
+| `Sem hora certa` | sem RTC e sem rede: a hora vai ser a do servidor quando o ponto chegar |
+| `ENTRADA    08:02` / nome | ponto registrado no servidor |
+| `PONTO OK   08:02` / nome | ponto guardado no relógio (sem conexão) |
+| `Senha incorreta` | tente de novo (3 tentativas) |
+| `Cartao nao cadastrado` | cadastre o cartão no painel |
+
+Ao ligar, o LCD mostra por 3 s o que foi encontrado: `RFID ok SD ok` / `RTC ok MEM ok`.
+
 | Som | Significado |
 |-----|-------------|
-| 1 bipe curto | entrada registrada (ou ponto salvo offline) |
+| 1 bipe curto | entrada registrada (ou ponto guardado sem conexão) |
 | 2 bipes curtos | saída registrada |
 | 2 bipes rápidos sem ação | painel pediu leitura de cartão |
-| bipe longo | erro (tag desconhecida, senha errada, desativado...) |
+| bipe longo | erro (cartão desconhecido, senha errada, desativado...) |
 
 ### Comandos no monitor serial (115200 baud)
 
@@ -683,15 +779,17 @@ Servem para testar sem leitor RFID (ex.: no Wokwi) e para diagnóstico.
 |---------|-----------|
 | `tag AA:BB:CC:DD` | simula a leitura de um cartão |
 | `pin 1234` | simula a senha no teclado |
-| `status` | Wi-Fi, IP, servidor online/offline, hora e tamanho da fila |
-| `fila` | lista os pontos salvos offline |
-| `sync` | envia a fila offline agora |
-| `limpar-fila` | apaga a fila offline |
-| `hora` | data e hora do relógio |
+| `status` | RFID, LCD, RTC, SD, Wi-Fi, servidor, hora e fila |
+| `fila` | lista os pontos guardados sem conexão |
+| `sync` | envia a fila agora |
+| `limpar-fila` | apaga a fila (os pontos se perdem) |
+| `funcionarios` | lista de funcionários guardada no relógio |
+| `atualizar` | baixa a lista de funcionários agora |
+| `hora` | data, hora e de onde ela veio (NTP, servidor ou RTC) |
 | `ajuda` | lista os comandos |
 | `wifi` | pergunta nome e senha da rede e conecta |
 | `servidor URL` | endereço da API, ex.: `servidor http://192.168.0.10:8080/api/v1` |
-| `chave CHAVE` | `DEVICE_API_KEY` do backend |
+| `chave CHAVE` | `DEVICE_API_KEY` do backend (e reenvia a fila) |
 | `config` | mostra Wi-Fi, servidor e chave em uso |
 | `reset-config` | volta aos valores padrão |
 
@@ -699,18 +797,20 @@ Servem para testar sem leitor RFID (ex.: no Wokwi) e para diagnóstico.
 
 ### Configuração do firmware
 
-Valores padrão no topo do `esp32/main.cpp`, usados enquanto nada for salvo pelo serial. Já vêm prontos para o Wokwi:
+Em `esp32/src/config.h`. Os padrões de rede valem enquanto nada for salvo (pelo `config.txt` ou pelo serial) e já vêm prontos para o Wokwi:
 
 | Constante | Padrão |
 |-----------|--------|
-| `WIFI_SSID_PADRAO` / `WIFI_PASSWORD_PADRAO` | `Wokwi-GUEST` / vazio |
-| `API_BASE_URL_PADRAO` | `http://host.wokwi.internal:8080/api/v1` |
-| `DEVICE_API_KEY_PADRAO` | `dev-device-key` |
-| `TIMEZONE` | `<-03>3` (UTC−3, formato POSIX) |
-| `PIN_TIMEOUT_MS` | 15 s para digitar a senha |
-| `MAX_OFFLINE_QUEUE` | 50 pontos guardados sem conexão |
+| `WIFI_SSID_PADRAO` / `WIFI_SENHA_PADRAO` | `Wokwi-GUEST` / vazio |
+| `API_URL_PADRAO` | `http://host.wokwi.internal:8080/api/v1` |
+| `CHAVE_PADRAO` | `dev-device-key` |
+| `FUSO_HORARIO` | `<-03>3` (UTC−3, formato POSIX) |
+| `TEMPO_DIGITAR_SENHA` | 15 s para digitar a senha |
+| `MAX_FILA_OFFLINE` | 2000 pontos guardados sem conexão |
+| `INTERVALO_LISTA_FUNCIONARIOS` | 1 min entre as consultas da lista |
+| `LCD_COLUNAS` / `LCD_LINHAS` | 16 / 2 |
 
-Bibliotecas (instaladas sozinhas pelo `platformio.ini`): ArduinoJson 7, MFRC522, Keypad.
+Bibliotecas (instaladas sozinhas pelo `platformio.ini`): ArduinoJson 7, MFRC522, Keypad, LiquidCrystal_I2C, RTClib.
 
 ## Desenvolvimento
 
@@ -759,5 +859,6 @@ curl -X POST $API/device/card-reads/$ID -H "$KEY" -d '{"cardTag":"12:34:56:78"}'
 - **Painel sem login:** qualquer pessoa com acesso à rede usa o painel. Só as rotas do ESP32 têm autenticação.
 - **Um relógio por vez** para leitura de cartão: se houver vários ESP32 com a mesma chave, o primeiro que ler atende o pedido.
 - **Senha de 4 dígitos com SHA-256 + salt:** suficiente para não guardar em texto puro. A segurança vem de exigir o cartão físico junto.
-- **Fila offline guarda a senha** na memória do ESP32 até sincronizar.
+- **O relógio guarda o hash das senhas** para conferir sem conexão. Com 4 dígitos, quem tirar a memória do ESP32 e tiver conhecimento técnico descobre as senhas. A fila offline também guarda a senha até sincronizar. As duas ficam na memória interna, não no cartão SD.
+- **`config.txt` no SD tem a senha do Wi-Fi e a chave do relógio** em texto. Apague o arquivo depois de configurar, se o relógio ficar em lugar público.
 - **HTTP sem TLS** entre ESP32 e backend. Em produção use HTTPS (`WiFiClientSecure`) ou rede isolada.
