@@ -109,13 +109,14 @@ void setup() {
   Serial.println();
   Serial.println("Inicializando ponto eletronico...");
 
-  // RFID e SD dividem o SPI: os dois CS em nivel alto antes de iniciar,
-  // para um nao responder no lugar do outro.
+  // CS do RFID e do SD em nivel alto antes de iniciar: nenhum dos dois
+  // responde antes da hora.
   pinMode(PINO_RFID_SS, OUTPUT);
   digitalWrite(PINO_RFID_SS, HIGH);
   pinMode(PINO_SD_CS, OUTPUT);
   digitalWrite(PINO_SD_CS, HIGH);
 
+  // SPI do RFID. O SD inicia o barramento dele em sdIniciar().
   SPI.begin(PINO_SPI_SCK, PINO_SPI_MISO, PINO_SPI_MOSI);
   Wire.begin(PINO_I2C_SDA, PINO_I2C_SCL);
 

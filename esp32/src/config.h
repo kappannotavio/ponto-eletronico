@@ -5,7 +5,7 @@
 // Pinos conforme o esquema de ligacao (ESP32 DevKit):
 //
 //   RFID (MFRC522)   SDA->D5  SCK->D18  MOSI->D23  MISO->D19  RST->D27  3.3V
-//   Cartao SD        CS->D4   SCK->D18  MOSI->D23  MISO->D19            3.3V
+//   Cartao SD        CS->D4   SCK->D14  MOSI->D13  MISO->D15            3.3V
 //   LCD 16x2 I2C     SDA->D21 SCL->D22                                  VIN (5V)
 //   RTC DS3231       SDA->D21 SCL->D22                                  3.3V
 //   Teclado 4x4      R1->VP(36) R2->VN(39) R3->D34 R4->D35
@@ -13,7 +13,8 @@
 //                    resistor de 10k de cada linha (36, 39, 34, 35) para 3V3
 //   Buzzer (opc.)    D17
 //
-// O RFID e o SD dividem o mesmo barramento SPI; cada um tem seu CS.
+// O RFID usa o barramento SPI padrao (VSPI) e o SD o segundo (HSPI),
+// cada um nos seus pinos, para um nao atrapalhar o outro.
 // O LCD e o RTC dividem o mesmo barramento I2C; cada um tem seu endereco.
 // =====================================================
 
@@ -23,12 +24,17 @@
 
 // ---------- Pinos ----------
 
+// RFID (SPI padrao / VSPI)
 const uint8_t PINO_SPI_SCK = 18;
 const uint8_t PINO_SPI_MISO = 19;
 const uint8_t PINO_SPI_MOSI = 23;
-
 const uint8_t PINO_RFID_SS = 5;
 const uint8_t PINO_RFID_RST = 27;
+
+// Cartao SD (segundo SPI / HSPI)
+const uint8_t PINO_SD_SCK = 14;
+const uint8_t PINO_SD_MISO = 15;
+const uint8_t PINO_SD_MOSI = 13;
 const uint8_t PINO_SD_CS = 4;
 
 const uint8_t PINO_I2C_SDA = 21;
