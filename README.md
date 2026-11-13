@@ -684,7 +684,7 @@ Erros: `404` tag não cadastrada · `401` senha incorreta (ou `invalid_device_ke
 | RFID MFRC522 | SDA (SS) / SCK / MOSI / MISO | D5 / D18 / D23 / D19 |
 | RFID MFRC522 | RST / IRQ | D27 / não ligado |
 | RFID MFRC522 | 3.3V / GND | 3V3 / GND |
-| Cartão SD | CS / SCK / MOSI (DI) / MISO (DO) | D4 / D18 / D23 / D19 |
+| Cartão SD | CS / SCK / MOSI (DI) / MISO (DO) | D4 / D14 / D13 / D15 |
 | Cartão SD | VCC / GND | 3V3 / GND (veja abaixo) |
 | LCD 16x2 I2C | SDA / SCL | D21 / D22 |
 | LCD 16x2 I2C | VCC / GND | VIN (5 V) / GND |
@@ -697,7 +697,7 @@ Erros: `404` tag não cadastrada · `401` senha incorreta (ou `invalid_device_ke
 
 Os pinos ficam em `esp32/src/config.h`.
 
-- **Barramento SPI dividido:** o RFID e o SD usam os mesmos SCK/MOSI/MISO, cada um com seu CS (D5 e D4).
+- **Dois barramentos SPI:** o RFID usa o SPI padrão (D18/D19/D23, CS D5) e o SD o segundo SPI do ESP32 (D14/D15/D13, CS D4). Separados, um não atrapalha o outro.
 - **Barramento I2C dividido:** o LCD e o RTC usam os mesmos SDA/SCL, cada um com seu endereço (LCD 0x27 ou 0x3F, detectado sozinho; RTC 0x68).
 - **Teclado nos pinos 34–39:** esses pinos só funcionam como entrada e não têm pull-up interno. Por isso as linhas do teclado vão neles com os resistores de 10 kΩ para 3V3, e as colunas, que precisam ser saída, vão em 32/33/25/26.
 - O MFRC522 é **3.3 V**. Não ligue no 5 V.
@@ -713,7 +713,6 @@ Os pinos ficam em `esp32/src/config.h`.
 
 - Formate em **FAT32**. Cartões até 32 GB.
 - O pino do módulo marcado **3V3** vai no 3V3. Se o seu módulo tiver só um pino **VCC** e um regulador (componente de 3 pernas, AMS1117) na placa, ele precisa de **5 V** (VIN): com 3.3 V o regulador entrega menos de 3 V e o cartão falha.
-- Alguns módulos baratos com chip conversor de nível (74LVC125) não soltam o MISO, e o RFID para de funcionar com o SD ligado. Se acontecer, use um módulo sem esse chip, ou passe o SD para o segundo barramento SPI do ESP32 (pinos 14, 12, 13 e 15, livres nessa ligação), o que exige mudar `cartao_sd.cpp`.
 - O SD é opcional: sem ele, o relógio funciona igual e só não grava o histórico.
 
 ### Arquivos do firmware

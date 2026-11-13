@@ -49,9 +49,9 @@
     [ "sd:GND", "esp:GND.1", "black", [] ],
     [ "sd:VCC", "esp:3V3", "red", [] ],
     [ "sd:CS", "esp:4", "gray", [] ],
-    [ "sd:DI", "esp:23", "yellow", [] ],
-    [ "sd:SCK", "esp:18", "white", [] ],
-    [ "sd:DO", "esp:19", "cyan", [] ],
+    [ "sd:DI", "esp:13", "yellow", [] ],
+    [ "sd:SCK", "esp:14", "white", [] ],
+    [ "sd:DO", "esp:15", "cyan", [] ],
 
     [ "buzzer:1", "esp:GND.1", "black", [] ],
     [ "buzzer:2", "esp:17", "red", [] ]

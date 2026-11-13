@@ -10,6 +10,9 @@ static const char* ARQUIVO_CONFIG = "/config.txt";
 static const char* ARQUIVO_EXEMPLO = "/config-exemplo.txt";
 static const char* PASTA_REGISTROS = "/registros";
 
+// O SD tem barramento proprio (HSPI), separado do RFID.
+static SPIClass spiSd(HSPI);
+
 static bool sdOk = false;
 static unsigned long proximaTentativa = 0;
 
@@ -40,8 +43,8 @@ static void criarExemploDeConfig() {
 }
 
 static bool montar() {
-  // A frequencia baixa deixa o barramento dividido com o RFID mais estavel.
-  if (!SD.begin(PINO_SD_CS, SPI, 4000000)) {
+  // 4 MHz: mais tolerante a fios longos e modulos baratos.
+  if (!SD.begin(PINO_SD_CS, spiSd, 4000000)) {
     SD.end();
     return false;
   }
@@ -60,6 +63,7 @@ static bool montar() {
 }
 
 void sdIniciar() {
+  spiSd.begin(PINO_SD_SCK, PINO_SD_MISO, PINO_SD_MOSI, PINO_SD_CS);
   sdOk = montar();
   proximaTentativa = millis() + 30000;
 
