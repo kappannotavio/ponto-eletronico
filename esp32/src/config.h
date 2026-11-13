@@ -90,7 +90,7 @@ const unsigned long INTERVALO_PEDIDO_CADASTRO = 2000;
 const unsigned long INTERVALO_SEM_SERVIDOR = 15000;
 const unsigned long INTERVALO_ENVIO_FILA = 30000;
 const unsigned long INTERVALO_LISTA_FUNCIONARIOS = 60000;
-const unsigned long INTERVALO_TENTAR_WIFI = 10000;
+const unsigned long INTERVALO_TENTAR_WIFI = 20000;
 const unsigned long INTERVALO_VERIFICAR_HARDWARE = 60000;
 // Sem NTP, acerta a hora pelo servidor nesse intervalo (corrige o RTC).
 const unsigned long INTERVALO_HORA_SERVIDOR = 3600000UL;

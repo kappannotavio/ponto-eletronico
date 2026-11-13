@@ -54,9 +54,10 @@ void redeManter() {
     }
   }
 
+  // Recomeca a conexao do zero (disconnect + begin). WiFi.reconnect() no meio
+  // de uma tentativa gera o erro "wifi:sta is connecting, return error".
   if (!conectado && (long)(millis() - proximaTentativaWifi) >= 0) {
-    WiFi.reconnect();
-    proximaTentativaWifi = millis() + INTERVALO_TENTAR_WIFI;
+    conectarWifi();
   }
 }
 
