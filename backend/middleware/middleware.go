@@ -65,6 +65,11 @@ const InvalidDeviceKeyCode = "invalid_device_key"
 // DeviceAuth exige o header X-Device-Key nas rotas do relogio de ponto.
 func DeviceAuth(apiKey string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Fecha a conexao depois de cada resposta. O HTTPClient do ESP32 le
+		// respostas sem Content-Length (204, 304) ate a conexao fechar; com
+		// keep-alive ele ficava preso nesse laco e o relogio travava.
+		w.Header().Set("Connection", "close")
+
 		key := r.Header.Get("X-Device-Key")
 
 		if subtle.ConstantTimeCompare([]byte(key), []byte(apiKey)) != 1 {

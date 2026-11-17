@@ -2,9 +2,14 @@ package middleware
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestDeviceAuth(t *testing.T) {
@@ -50,5 +55,36 @@ func TestDeviceAuth(t *testing.T) {
 				t.Fatal("error vazio")
 			}
 		})
+	}
+}
+
+// O HTTPClient do ESP32 le uma resposta sem Content-Length (como o 204 de
+// "nenhum pedido de leitura") ate a conexao fechar. Com keep-alive o relogio
+// travava, entao as rotas do dispositivo precisam fechar a conexao.
+func TestDeviceAuthClosesConnectionAfterResponse(t *testing.T) {
+	server := httptest.NewServer(DeviceAuth("chave", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	conn, err := net.Dial("tcp", server.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	// Mesma requisicao que o ESP32 manda: HTTP/1.1 com keep-alive.
+	fmt.Fprintf(conn, "GET /device/card-reads/pending HTTP/1.1\r\nHost: x\r\nX-Device-Key: chave\r\nConnection: keep-alive\r\n\r\n")
+
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	resposta, err := io.ReadAll(conn)
+	if err != nil {
+		t.Fatalf("servidor nao fechou a conexao depois do 204 (o ESP32 ficaria travado): %v", err)
+	}
+	if !strings.HasPrefix(string(resposta), "HTTP/1.1 204") {
+		t.Fatalf("resposta inesperada: %q", resposta)
+	}
+	if !strings.Contains(string(resposta), "Connection: close") {
+		t.Fatalf("resposta sem Connection: close: %q", resposta)
 	}
 }
