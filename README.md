@@ -29,6 +29,7 @@ backend/                  API em Go (biblioteca padrão + go-pdf/fpdf para o PDF
   config/                 variáveis de ambiente
   handler/                camada HTTP: lê a requisição, chama o service, escreve JSON
   middleware/             log, CORS e autenticação do dispositivo
+  web/                    painel embutido no executável (go:embed)
   model/                  structs que viram JSON
   report/                 geração do espelho de ponto em PDF
   repository/             interfaces + SQLite (banco) e versão em memória (testes)
@@ -66,10 +67,35 @@ Esse comando instala as dependências do frontend se faltar, sobe o backend (com
 | `./dev.sh relogio` | relógio de ponto virtual no terminal (simula o ESP32) |
 | `./dev.sh test` | testes do backend e do frontend |
 | `./dev.sh esp32` | compila o firmware (`upload` grava, `monitor` abre o serial) |
+| `./dev.sh build` | gera o sistema como executável: `release/ponto` (Linux) e `release/ponto.exe` (Windows) |
 | `./dev.sh punch [TAG] [PIN]` | bate um ponto de teste sem ESP32 (padrão `A1:B2:C3:D4 1234`) |
 | `SEED_DEMO_DATA=false ./dev.sh` | não cria os dados de exemplo (para zerar o banco, apague `backend/ponto.db`) |
 
 Os passos abaixo mostram como rodar cada parte manualmente.
+
+### Executável (para usar de verdade)
+
+Para usar no dia a dia, sem `dev.sh`, sem Go e sem Node no PC do ponto, gere o sistema como **um arquivo só**, com o backend e o painel juntos:
+
+```bash
+./dev.sh build
+```
+
+Saem dois arquivos em `release/`: `ponto` (Linux) e `ponto.exe` (Windows). Copie o arquivo para uma pasta própria no PC do ponto e rode:
+
+- **Linux:** `./ponto`
+- **Windows:** dois cliques no `ponto.exe`. Fica uma janela preta aberta com o log; fechar a janela desliga o sistema. Na primeira vez o Windows pergunta sobre o firewall: permita em **redes privadas**, senão o ESP32 não consegue conectar.
+
+O navegador abre sozinho em **http://localhost:8080**, que é o painel. O log mostra o endereço que deve ser configurado no relógio:
+
+```
+painel: http://localhost:8080
+relogio (ESP32): servidor http://192.168.0.10:8080/api/v1
+```
+
+O banco `ponto.db` fica na pasta de onde o programa roda, e as variáveis de ambiente da tabela acima continuam valendo. Para não abrir o navegador sozinho, use `ABRIR_NAVEGADOR=false`.
+
+O painel fica dentro do executável pelo `//go:embed` (`backend/web/`). O `./dev.sh build` compila o painel e copia o resultado para `backend/web/dist` antes de gerar o executável. Rodando o backend pelo `dev.sh` ou com `go run`, o painel continua no `ng serve` (porta 4200), como antes.
 
 ### Pré-requisitos
 
@@ -119,6 +145,7 @@ Ao abrir o `ponto.exe`, o `ponto.db` é criado na mesma pasta.
 | `DEVICE_API_KEY` | `dev-device-key` | Chave que o ESP32 envia no header `X-Device-Key`. **Troque em produção** e configure a mesma chave no relógio (`chave` no `config.txt` do SD ou no monitor serial). |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:4200` | Origens liberadas, separadas por vírgula. `*` libera todas. Só importa se o front não usar o proxy. |
 | `APP_TIMEZONE` | `America/Sao_Paulo` | Fuso usado para separar os dias e calcular horários |
+| `ABRIR_NAVEGADOR` | `true` | abre o painel no navegador ao iniciar (só no executável, que tem o painel embutido) |
 | `SEED_DEMO_DATA` | `false` | `true` cria dados de exemplo ao iniciar (só se o banco estiver vazio) |
 | `DB_PATH` | `ponto.db` | Arquivo do banco SQLite. Pode ser um caminho completo, ex.: `C:\Ponto\ponto.db`. A pasta é criada se não existir. |
 

@@ -2,8 +2,11 @@ package main
 
 import (
 	"log"
+	"net"
 	"net/http"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
 	_ "time/tzdata"
 
@@ -12,6 +15,7 @@ import (
 	"github.com/kappannotavio/ponto-eletronico/middleware"
 	"github.com/kappannotavio/ponto-eletronico/repository"
 	"github.com/kappannotavio/ponto-eletronico/service"
+	"github.com/kappannotavio/ponto-eletronico/web"
 )
 
 func main() {
@@ -96,14 +100,70 @@ func main() {
 	mux.HandleFunc("GET /api/v1/device/card-reads/pending", device(deviceHandler.PendingCardRead))
 	mux.HandleFunc("POST /api/v1/device/card-reads/{id}", device(deviceHandler.CompleteCardRead))
 
+	// Painel embutido (executavel gerado com ./dev.sh build). Qualquer caminho
+	// que nao seja uma rota da API acima cai aqui.
+	mux.Handle("/", web.Handler())
+
 	app := middleware.Logging(middleware.CORS(cfg.CORSAllowedOrigins)(mux))
 
 	address := ":" + cfg.Port
-	log.Printf("server running on %s (timezone %s)", address, cfg.Timezone)
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		log.Fatalf("nao foi possivel usar a porta %s (o sistema ja esta aberto?): %v", cfg.Port, err)
+	}
 
-	if err := http.ListenAndServe(address, app); err != nil {
+	log.Printf("server running on %s (timezone %s)", address, cfg.Timezone)
+	mostrarEnderecos(cfg.Port)
+
+	if web.Disponivel() && cfg.OpenBrowser {
+		abrirNavegador("http://localhost:" + cfg.Port)
+	}
+
+	if err := http.Serve(listener, app); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// mostrarEnderecos imprime o endereco do painel e o que deve ser configurado
+// no relogio (comando "servidor" do ESP32 ou config.txt do cartao SD).
+func mostrarEnderecos(port string) {
+	if web.Disponivel() {
+		log.Printf("painel: http://localhost:%s", port)
+	} else {
+		log.Printf("painel: use ./dev.sh e abra http://localhost:4200 (este backend nao tem o painel embutido)")
+	}
+
+	interfaces, err := net.InterfaceAddrs()
+	if err != nil {
+		return
+	}
+	for _, endereco := range interfaces {
+		ip, ok := endereco.(*net.IPNet)
+		if !ok || ip.IP.IsLoopback() || ip.IP.To4() == nil {
+			continue
+		}
+		log.Printf("relogio (ESP32): servidor http://%s:%s/api/v1", ip.IP, port)
+	}
+}
+
+// abrirNavegador abre o painel no navegador padrao (no Windows, ao dar dois
+// cliques no ponto.exe). Desligue com ABRIR_NAVEGADOR=false.
+func abrirNavegador(url string) {
+	var comando *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		comando = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	case "darwin":
+		comando = exec.Command("open", url)
+	default:
+		comando = exec.Command("xdg-open", url)
+	}
+
+	if err := comando.Start(); err != nil {
+		log.Printf("abra o painel no navegador: %s", url)
+		return
+	}
+	go comando.Wait()
 }
 
 func absPath(path string) string {

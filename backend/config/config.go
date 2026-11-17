@@ -13,10 +13,12 @@ type Config struct {
 	Timezone           string
 	SeedDemoData       bool
 	DatabasePath       string
+	OpenBrowser        bool
 }
 
 func Load() Config {
 	seed, _ := strconv.ParseBool(env("SEED_DEMO_DATA", "false"))
+	openBrowser, _ := strconv.ParseBool(env("ABRIR_NAVEGADOR", "true"))
 
 	return Config{
 		Port:               env("PORT", "8080"),
@@ -25,6 +27,7 @@ func Load() Config {
 		Timezone:           env("APP_TIMEZONE", "America/Sao_Paulo"),
 		SeedDemoData:       seed,
 		DatabasePath:       env("DB_PATH", "ponto.db"),
+		OpenBrowser:        openBrowser,
 	}
 }
 
