@@ -7,3 +7,7 @@
 # Executaveis gerados com go build
 /ponto
 /ponto.exe
+
+# Painel compilado (gerado por ./dev.sh build)
+/web/dist/*
+!/web/dist/.gitkeep

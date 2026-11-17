@@ -12,6 +12,7 @@ import (
 	"github.com/kappannotavio/ponto-eletronico/middleware"
 	"github.com/kappannotavio/ponto-eletronico/repository"
 	"github.com/kappannotavio/ponto-eletronico/service"
+	"github.com/kappannotavio/ponto-eletronico/web"
 )
 
 func main() {
@@ -96,10 +97,19 @@ func main() {
 	mux.HandleFunc("GET /api/v1/device/card-reads/pending", device(deviceHandler.PendingCardRead))
 	mux.HandleFunc("POST /api/v1/device/card-reads/{id}", device(deviceHandler.CompleteCardRead))
 
+	// Painel web embutido (tudo que nao e /api/v1/...).
+	painel, painelEmbutido := web.Painel()
+	mux.Handle("GET /", painel)
+
 	app := middleware.Logging(middleware.CORS(cfg.CORSAllowedOrigins)(mux))
 
 	address := ":" + cfg.Port
 	log.Printf("server running on %s (timezone %s)", address, cfg.Timezone)
+	if painelEmbutido {
+		log.Printf("painel: http://localhost:%s (nos outros PCs da rede: http://IP_DESTE_PC:%s)", cfg.Port, cfg.Port)
+	} else {
+		log.Printf("painel nao embutido neste build; em desenvolvimento use http://localhost:4200")
+	}
 
 	if err := http.ListenAndServe(address, app); err != nil {
 		log.Fatal(err)
