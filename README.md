@@ -26,6 +26,7 @@ flowchart LR
 backend/                  API em Go (biblioteca padrão + go-pdf/fpdf para o PDF)
   cmd/api/                main.go (rotas) e seed.go (dados de demonstração)
   cmd/relogio-virtual/    simulador do ESP32 no terminal
+  web/                    serve o painel compilado, embutido no executável (go:embed)
   config/                 variáveis de ambiente
   handler/                camada HTTP: lê a requisição, chama o service, escreve JSON
   middleware/             log, CORS e autenticação do dispositivo
@@ -65,6 +66,7 @@ Esse comando instala as dependências do frontend se faltar, sobe o backend (com
 | `./dev.sh frontend` | só o frontend |
 | `./dev.sh relogio` | relógio de ponto virtual no terminal (simula o ESP32) |
 | `./dev.sh test` | testes do backend e do frontend |
+| `./dev.sh build` | gera `release/ponto.exe` e `release/ponto` com o painel embutido (veja [executável](#executável-para-o-pc-do-sistema-painel-embutido)) |
 | `./dev.sh esp32` | compila o firmware (`upload` grava, `monitor` abre o serial) |
 | `./dev.sh punch [TAG] [PIN]` | bate um ponto de teste sem ESP32 (padrão `A1:B2:C3:D4 1234`) |
 | `SEED_DEMO_DATA=false ./dev.sh` | não cria os dados de exemplo (para zerar o banco, apague `backend/ponto.db`) |
@@ -101,15 +103,25 @@ Os dados ficam num banco **SQLite**, que é um arquivo só: `ponto.db`, criado n
 - Para abrir e consultar as tabelas, use qualquer visualizador de SQLite (por exemplo o [DB Browser for SQLite](https://sqlitebrowser.org/)). As datas ficam em UTC (`2026-11-12T11:02:00.000000000Z` = 08:02 em Brasília).
 - Pedidos de "Ler no relógio" continuam só em memória: duram no máximo 60 s e não precisam ser guardados.
 
-Para gerar um executável e levar para o PC que vai rodar o sistema (o PC não precisa ter Go):
+#### Executável para o PC do sistema (painel embutido)
+
+Na raiz do projeto, no seu computador de desenvolvimento:
 
 ```bash
-cd backend
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o ponto.exe ./cmd/api   # Windows
-CGO_ENABLED=0 go build -o ponto ./cmd/api                                 # Linux
+./dev.sh build
 ```
 
-Ao abrir o `ponto.exe`, o `ponto.db` é criado na mesma pasta.
+Isso compila o painel e gera `release/ponto.exe` (Windows) e `release/ponto` (Linux), com **o painel dentro do executável**.
+
+O PC que vai rodar o sistema **não precisa instalar nada**: nem Go, nem Node, nem banco. É só:
+
+1. Copiar o `ponto.exe` para uma pasta (ex.: `C:\Ponto\`) e abrir. Se o Windows perguntar sobre o firewall, **permita** (o ESP32 precisa acessar a porta 8080).
+2. Abrir o painel no navegador: `http://localhost:8080` nesse PC, ou `http://IP_DO_PC:8080` em outro computador ou celular da mesma rede.
+3. Configurar no ESP32 o servidor `http://IP_DO_PC:8080/api/v1`.
+
+O `ponto.db` é criado na mesma pasta do executável. Para trocar de versão, feche o programa e substitua só o `ponto.exe`: os dados continuam no `ponto.db`.
+
+O painel compilado fica em `backend/web/dist/painel` (fora do git). Um `go run`/`go build` sem esse passo funciona, mas no lugar do painel mostra uma página avisando para rodar `./dev.sh build`.
 
 #### Variáveis de ambiente
 
