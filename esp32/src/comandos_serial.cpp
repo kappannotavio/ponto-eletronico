@@ -29,6 +29,8 @@ void mostrarAjuda() {
   Serial.println("  sync             envia a fila agora");
   Serial.println("  limpar-fila      apaga a fila (os pontos se perdem!)");
   Serial.println("  funcionarios     lista salva no relogio");
+  Serial.println("  registros        ultimos pontos gravados no cartao SD");
+  Serial.println("  bip              testa o buzzer");
   Serial.println("  atualizar        baixa a lista de funcionarios agora");
   Serial.println("  hora             mostra data e hora");
   Serial.println("  ajuda            mostra esta tela");
@@ -203,6 +205,15 @@ void processarSerial() {
   } else if (comando == "limpar-fila") {
     filaApagar();
     Serial.println("Fila offline apagada.");
+  } else if (comando == "registros") {
+    sdMostrarRegistros(20);
+  } else if (comando == "bip") {
+    Serial.println("Testando o buzzer (entrada, saida, erro)...");
+    bipEntrada();
+    delay(400);
+    bipSaida();
+    delay(400);
+    bipErro();
   } else if (comando == "funcionarios") {
     funcionariosListar();
   } else if (comando == "atualizar") {

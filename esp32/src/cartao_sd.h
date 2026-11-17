@@ -21,6 +21,9 @@ String sdDescricao();
 // Le /config.txt. Devolve true se o arquivo existe (campos vazios = nao mudar).
 bool sdLerConfig(ConfigRede& config);
 
+// Mostra no monitor serial as ultimas linhas do historico do mes.
+void sdMostrarRegistros(int quantidade);
+
 // Acrescenta uma linha no historico do mes.
 // situacao: "registrado", "offline", "enviado", "descartado", "recusado"...
 void sdRegistrar(

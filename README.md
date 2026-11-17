@@ -693,9 +693,11 @@ Erros: `404` tag não cadastrada · `401` senha incorreta (ou `invalid_device_ke
 | Teclado 4x4 | linhas R1 / R2 / R3 / R4 | VP (36) / VN (39) / D34 / D35 |
 | Teclado 4x4 | colunas C1 / C2 / C3 / C4 | D32 / D33 / D25 / D26 |
 | Resistores 10 kΩ | um em cada linha do teclado (36, 39, 34, 35) | para 3V3 |
-| Buzzer ativo (opcional) | + / − | D17 / GND |
+| Buzzer | + / − | D17 / GND |
 
 Os pinos ficam em `esp32/src/config.h`.
+
+- **Buzzer no D17.** O D13 não serve, porque é o MOSI do SD. Se precisar trocar, o D16 também está livre. Evite D12 e D2: com algo puxando esses pinos, o ESP32 não liga ou não grava. Para buzzer **passivo** (o que só dá um clique quando recebe energia), mude `BUZZER_PASSIVO` para `true` no `config.h`. Teste com o comando `bip` no monitor.
 
 - **Dois barramentos SPI:** o RFID usa o SPI padrão (D18/D19/D23, CS D5) e o SD o segundo SPI do ESP32 (D14/D15/D13, CS D4). Separados, um não atrapalha o outro.
 - **Barramento I2C dividido:** o LCD e o RTC usam os mesmos SDA/SCL, cada um com seu endereço (LCD 0x27 ou 0x3F, detectado sozinho; RTC 0x68).
@@ -783,6 +785,8 @@ Servem para testar sem leitor RFID (ex.: no Wokwi) e para diagnóstico.
 | `sync` | envia a fila agora |
 | `limpar-fila` | apaga a fila (os pontos se perdem) |
 | `funcionarios` | lista de funcionários guardada no relógio |
+| `registros` | últimos 20 eventos gravados no cartão SD (mês atual) |
+| `bip` | testa o buzzer (sons de entrada, saída e erro) |
 | `atualizar` | baixa a lista de funcionários agora |
 | `hora` | data, hora e de onde ela veio (NTP, servidor ou RTC) |
 | `ajuda` | lista os comandos |

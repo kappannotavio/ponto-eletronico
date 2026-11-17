@@ -11,7 +11,7 @@
 //   Teclado 4x4      R1->VP(36) R2->VN(39) R3->D34 R4->D35
 //                    C1->D32 C2->D33 C3->D25 C4->D26
 //                    resistor de 10k de cada linha (36, 39, 34, 35) para 3V3
-//   Buzzer (opc.)    D17
+//   Buzzer           + -> D17   - -> GND   (D13 e do SD; D12/D2 atrapalham o boot)
 //
 // O RFID usa o barramento SPI padrao (VSPI) e o SD o segundo (HSPI),
 // cada um nos seus pinos, para um nao atrapalhar o outro.
@@ -40,8 +40,13 @@ const uint8_t PINO_SD_CS = 4;
 const uint8_t PINO_I2C_SDA = 21;
 const uint8_t PINO_I2C_SCL = 22;
 
-// Buzzer ativo (opcional). Sem buzzer ligado, o pino fica sem uso.
+// Buzzer. Pinos livres que tambem servem: 16. Nao use 13 (MOSI do SD),
+// nem 12 ou 2 (o ESP32 nao liga ou nao grava com algo puxando esses pinos).
 const uint8_t PINO_BUZZER = 17;
+// Buzzer ativo (tem oscilador, apita so com energia): false.
+// Buzzer passivo (precisa de frequencia, so da um "clique" com energia): true.
+const bool BUZZER_PASSIVO = false;
+const unsigned int FREQUENCIA_BUZZER = 2700;
 
 // As linhas do teclado estao nos pinos 34-39, que so funcionam como entrada
 // e nao tem pull-up interno: por isso os resistores de 10k para 3V3.
