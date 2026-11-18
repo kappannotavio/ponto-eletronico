@@ -93,7 +93,7 @@ painel: http://localhost:8080
 relogio (ESP32): servidor http://192.168.0.10:8080/api/v1
 ```
 
-O banco `ponto.db` fica na pasta de onde o programa roda, e as variáveis de ambiente da tabela acima continuam valendo. Para não abrir o navegador sozinho, use `ABRIR_NAVEGADOR=false`.
+O banco `ponto.db` fica na pasta de onde o programa roda, e as variáveis de ambiente da tabela acima continuam valendo. Para trocar de versão, feche o programa e substitua só o executável: os dados continuam no `ponto.db`. O painel também abre em outro computador ou celular da mesma rede, em `http://IP_DO_PC:8080`. Para não abrir o navegador sozinho, use `ABRIR_NAVEGADOR=false`.
 
 O painel fica dentro do executável pelo `//go:embed` (`backend/web/`). O `./dev.sh build` compila o painel e copia o resultado para `backend/web/dist` antes de gerar o executável. Rodando o backend pelo `dev.sh` ou com `go run`, o painel continua no `ng serve` (porta 4200), como antes.
 
@@ -127,15 +127,7 @@ Os dados ficam num banco **SQLite**, que é um arquivo só: `ponto.db`, criado n
 - Para abrir e consultar as tabelas, use qualquer visualizador de SQLite (por exemplo o [DB Browser for SQLite](https://sqlitebrowser.org/)). As datas ficam em UTC (`2026-11-12T11:02:00.000000000Z` = 08:02 em Brasília).
 - Pedidos de "Ler no relógio" continuam só em memória: duram no máximo 60 s e não precisam ser guardados.
 
-Para gerar um executável e levar para o PC que vai rodar o sistema (o PC não precisa ter Go):
-
-```bash
-cd backend
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o ponto.exe ./cmd/api   # Windows
-CGO_ENABLED=0 go build -o ponto ./cmd/api                                 # Linux
-```
-
-Ao abrir o `ponto.exe`, o `ponto.db` é criado na mesma pasta.
+Para levar o sistema para o PC que vai usá-lo, sem precisar de Go nem Node, veja [executável](#executável-para-usar-de-verdade).
 
 #### Variáveis de ambiente
 
