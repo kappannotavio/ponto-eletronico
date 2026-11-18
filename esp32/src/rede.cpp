@@ -54,9 +54,10 @@ void redeManter() {
     }
   }
 
+  // Recomeca a conexao do zero (disconnect + begin). WiFi.reconnect() no meio
+  // de uma tentativa gera o erro "wifi:sta is connecting, return error".
   if (!conectado && (long)(millis() - proximaTentativaWifi) >= 0) {
-    WiFi.reconnect();
-    proximaTentativaWifi = millis() + INTERVALO_TENTAR_WIFI;
+    conectarWifi();
   }
 }
 
@@ -130,6 +131,9 @@ int api(
   HTTPClient http;
   http.setConnectTimeout(2000);
   http.setTimeout(4000);
+  // Pede para o servidor fechar a conexao ao terminar: sem isso, uma resposta
+  // sem corpo (204, 304) deixa o HTTPClient esperando dados para sempre.
+  http.setReuse(false);
 
   if (!http.begin(config.apiUrl + caminho)) {
     ultimaRespostaOk = false;
@@ -158,7 +162,10 @@ int api(
       *etagRecebido = http.header("ETag");
     }
 
-    if (resposta != nullptr || corpoBruto != nullptr) {
+    // 204 e 304 nao tem corpo: nao tenta ler.
+    bool temCorpo = status != 204 && status != 304;
+
+    if (temCorpo && (resposta != nullptr || corpoBruto != nullptr)) {
       String texto = http.getString();
 
       if (resposta != nullptr && texto.length() > 0) {

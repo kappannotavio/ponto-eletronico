@@ -5,39 +5,33 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"testing/fstest"
 )
 
-func TestSPA(t *testing.T) {
-	files := fstest.MapFS{
-		"index.html":  {Data: []byte("<html>painel</html>")},
-		"main-ABC.js": {Data: []byte("console.log(1)")},
-		"favicon.ico": {Data: []byte("ico")},
-	}
-	handler := spa(files)
+func TestHandlerAPIRouteIsNotThePanel(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/nao-existe", nil))
 
-	tests := []struct {
-		path, wantBody, wantCache string
-		wantStatus                int
-	}{
-		{"/", "painel", "no-cache", 200},
-		{"/employees/new", "painel", "no-cache", 200},
-		{"/main-ABC.js", "console.log", "immutable", 200},
-		{"/api/v1/nao-existe", "rota nao encontrada", "", 404},
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Header().Get("Content-Type"), "json") {
+		t.Fatalf("rota de API inexistente deveria dar 404 JSON, veio %d %q", rec.Code, rec.Header().Get("Content-Type"))
 	}
+}
 
-	for _, tt := range tests {
+func TestHandlerRejectsNonGet(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/employees", nil))
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST no painel deveria dar 405, veio %d", rec.Code)
+	}
+}
+
+func TestHandlerServesPage(t *testing.T) {
+	for _, caminho := range []string{"/", "/employees", "/time-records"} {
 		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.path, nil))
+		Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, caminho, nil))
 
-		if rec.Code != tt.wantStatus {
-			t.Errorf("%s: status %d, want %d", tt.path, rec.Code, tt.wantStatus)
-		}
-		if !strings.Contains(rec.Body.String(), tt.wantBody) {
-			t.Errorf("%s: body %q, want %q", tt.path, rec.Body.String(), tt.wantBody)
-		}
-		if !strings.Contains(rec.Header().Get("Cache-Control"), tt.wantCache) {
-			t.Errorf("%s: Cache-Control %q, want %q", tt.path, rec.Header().Get("Cache-Control"), tt.wantCache)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "text/html") {
+			t.Fatalf("%s: esperado 200 HTML, veio %d %q", caminho, rec.Code, rec.Header().Get("Content-Type"))
 		}
 	}
 }

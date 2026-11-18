@@ -111,8 +111,18 @@ bool sdLerConfig(ConfigRede& config) {
     return false;
   }
 
+  bool primeiraLinha = true;
+  int campos = 0;
+
   while (arquivo.available()) {
     String linha = arquivo.readStringUntil('\n');
+
+    // O Bloco de Notas pode salvar "UTF-8 com BOM": 3 bytes invisiveis no
+    // inicio que fariam a primeira linha (wifi_ssid) ser ignorada.
+    if (primeiraLinha && linha.startsWith("\xEF\xBB\xBF")) {
+      linha.remove(0, 3);
+    }
+    primeiraLinha = false;
     linha.trim();
 
     if (linha.length() == 0 || linha.startsWith("#")) {
@@ -138,11 +148,59 @@ bool sdLerConfig(ConfigRede& config) {
       config.apiUrl = valor;
     } else if (chave == "chave") {
       config.chave = valor;
+    } else {
+      Serial.println("config.txt: campo desconhecido \"" + chave + "\" (ignorado)");
+      continue;
     }
+    campos++;
   }
 
   arquivo.close();
+  Serial.println("config.txt lido do cartao SD (" + String(campos) + " campo(s)).");
   return true;
+}
+
+static String arquivoDoMes() {
+  String mes = mesAtual();
+  return String(PASTA_REGISTROS) + "/" + (mes.length() > 0 ? mes : String("sem-data")) + ".csv";
+}
+
+void sdMostrarRegistros(int quantidade) {
+  Serial.println();
+  Serial.println("======= REGISTROS NO SD =======");
+
+  String caminho = arquivoDoMes();
+  File arquivo = sdOk ? SD.open(caminho, FILE_READ) : File();
+
+  if (!arquivo) {
+    Serial.println(sdOk ? "Nenhum registro este mes (" + caminho + ")." : String("Cartao SD ausente."));
+    Serial.println("===============================");
+    return;
+  }
+
+  // Guarda so as ultimas linhas lidas (o arquivo pode ser grande).
+  String ultimas[50];
+  quantidade = constrain(quantidade, 1, 50);
+  int total = 0;
+
+  while (arquivo.available()) {
+    String linha = arquivo.readStringUntil('\n');
+    linha.trim();
+    if (linha.length() == 0 || linha.startsWith("data;")) {
+      continue;
+    }
+    ultimas[total % quantidade] = linha;
+    total++;
+  }
+  arquivo.close();
+
+  int inicio = total > quantidade ? total - quantidade : 0;
+  for (int i = inicio; i < total; i++) {
+    Serial.println(ultimas[i % quantidade]);
+  }
+
+  Serial.println("Arquivo: " + caminho + " (" + String(total) + " linha(s))");
+  Serial.println("===============================");
 }
 
 // Campos do CSV nao podem ter ; nem quebra de linha.
@@ -164,8 +222,7 @@ void sdRegistrar(
     return;
   }
 
-  String mes = mesAtual();
-  String caminho = String(PASTA_REGISTROS) + "/" + (mes.length() > 0 ? mes : String("sem-data")) + ".csv";
+  String caminho = arquivoDoMes();
   bool novo = !SD.exists(caminho);
 
   File arquivo = SD.open(caminho, FILE_APPEND);

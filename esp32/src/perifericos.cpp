@@ -130,6 +130,13 @@ char lerTecla() {
 }
 
 void bip(int duracaoMs) {
+  if (BUZZER_PASSIVO) {
+    tone(PINO_BUZZER, FREQUENCIA_BUZZER);
+    delay(duracaoMs);
+    noTone(PINO_BUZZER);
+    return;
+  }
+
   digitalWrite(PINO_BUZZER, HIGH);
   delay(duracaoMs);
   digitalWrite(PINO_BUZZER, LOW);

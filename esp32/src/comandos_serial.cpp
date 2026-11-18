@@ -29,6 +29,8 @@ void mostrarAjuda() {
   Serial.println("  sync             envia a fila agora");
   Serial.println("  limpar-fila      apaga a fila (os pontos se perdem!)");
   Serial.println("  funcionarios     lista salva no relogio");
+  Serial.println("  registros        ultimos pontos gravados no cartao SD");
+  Serial.println("  bip              testa o buzzer");
   Serial.println("  atualizar        baixa a lista de funcionarios agora");
   Serial.println("  hora             mostra data e hora");
   Serial.println("  ajuda            mostra esta tela");
@@ -84,14 +86,53 @@ static void mostrarConfiguracao() {
   Serial.println("================================");
 }
 
+// Junta o que chega no Serial ate o Enter. Monitores que mandam cada tecla
+// na hora (como o do PlatformIO) e os que mandam a linha inteira funcionam.
+static String bufferSerial = "";
+static bool ultimoFoiCR = false;
+
+static bool linhaRecebida(String& linha) {
+  while (Serial.available()) {
+    char c = (char)Serial.read();
+
+    // "\r\n" conta como um Enter so.
+    if (c == '\n' && ultimoFoiCR) {
+      ultimoFoiCR = false;
+      continue;
+    }
+    ultimoFoiCR = c == '\r';
+
+    if (c == '\r' || c == '\n') {
+      linha = bufferSerial;
+      linha.trim();
+      bufferSerial = "";
+      return true;
+    }
+
+    // Backspace apaga o ultimo caractere.
+    if (c == 8 || c == 127) {
+      if (bufferSerial.length() > 0) {
+        bufferSerial.remove(bufferSerial.length() - 1);
+      }
+      continue;
+    }
+
+    if (bufferSerial.length() < 200) {
+      bufferSerial += c;
+    }
+  }
+
+  return false;
+}
+
 // Espera uma linha no Serial (usado so nos comandos de configuracao).
+// Enter sem nada devolve "" (ex.: rede sem senha).
 static String lerLinhaSerial(unsigned long timeoutMs) {
   unsigned long prazo = millis() + timeoutMs;
+  String linha;
 
   while ((long)(millis() - prazo) < 0) {
-    if (Serial.available()) {
-      String linha = Serial.readStringUntil('\n');
-      linha.trim();
+    if (linhaRecebida(linha)) {
       return linha;
     }
     delay(10);
@@ -121,12 +162,10 @@ static void configurarWifi() {
 }
 
 void processarSerial() {
-  if (!Serial.available()) {
+  String linha;
+  if (!linhaRecebida(linha)) {
     return;
   }
-
-  String linha = Serial.readStringUntil('\n');
-  linha.trim();
 
   if (linha.length() == 0) {
     return;
@@ -166,6 +205,15 @@ void processarSerial() {
   } else if (comando == "limpar-fila") {
     filaApagar();
     Serial.println("Fila offline apagada.");
+  } else if (comando == "registros") {
+    sdMostrarRegistros(20);
+  } else if (comando == "bip") {
+    Serial.println("Testando o buzzer (entrada, saida, erro)...");
+    bipEntrada();
+    delay(400);
+    bipSaida();
+    delay(400);
+    bipErro();
   } else if (comando == "funcionarios") {
     funcionariosListar();
   } else if (comando == "atualizar") {

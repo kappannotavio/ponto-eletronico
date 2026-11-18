@@ -26,10 +26,10 @@ flowchart LR
 backend/                  API em Go (biblioteca padrão + go-pdf/fpdf para o PDF)
   cmd/api/                main.go (rotas) e seed.go (dados de demonstração)
   cmd/relogio-virtual/    simulador do ESP32 no terminal
-  web/                    serve o painel compilado, embutido no executável (go:embed)
   config/                 variáveis de ambiente
   handler/                camada HTTP: lê a requisição, chama o service, escreve JSON
   middleware/             log, CORS e autenticação do dispositivo
+  web/                    painel embutido no executável (go:embed)
   model/                  structs que viram JSON
   report/                 geração do espelho de ponto em PDF
   repository/             interfaces + SQLite (banco) e versão em memória (testes)
@@ -66,12 +66,36 @@ Esse comando instala as dependências do frontend se faltar, sobe o backend (com
 | `./dev.sh frontend` | só o frontend |
 | `./dev.sh relogio` | relógio de ponto virtual no terminal (simula o ESP32) |
 | `./dev.sh test` | testes do backend e do frontend |
-| `./dev.sh build` | gera `release/ponto.exe` e `release/ponto` com o painel embutido (veja [executável](#executável-para-o-pc-do-sistema-painel-embutido)) |
 | `./dev.sh esp32` | compila o firmware (`upload` grava, `monitor` abre o serial) |
+| `./dev.sh build` | gera o sistema como executável: `release/ponto` (Linux) e `release/ponto.exe` (Windows) |
 | `./dev.sh punch [TAG] [PIN]` | bate um ponto de teste sem ESP32 (padrão `A1:B2:C3:D4 1234`) |
 | `SEED_DEMO_DATA=false ./dev.sh` | não cria os dados de exemplo (para zerar o banco, apague `backend/ponto.db`) |
 
 Os passos abaixo mostram como rodar cada parte manualmente.
+
+### Executável (para usar de verdade)
+
+Para usar no dia a dia, sem `dev.sh`, sem Go e sem Node no PC do ponto, gere o sistema como **um arquivo só**, com o backend e o painel juntos:
+
+```bash
+./dev.sh build
+```
+
+Saem dois arquivos em `release/`: `ponto` (Linux) e `ponto.exe` (Windows). Copie o arquivo para uma pasta própria no PC do ponto e rode:
+
+- **Linux:** `./ponto`
+- **Windows:** dois cliques no `ponto.exe`. Fica uma janela preta aberta com o log; fechar a janela desliga o sistema. Na primeira vez o Windows pergunta sobre o firewall: permita em **redes privadas**, senão o ESP32 não consegue conectar.
+
+O navegador abre sozinho em **http://localhost:8080**, que é o painel. O log mostra o endereço que deve ser configurado no relógio:
+
+```
+painel: http://localhost:8080
+relogio (ESP32): servidor http://192.168.0.10:8080/api/v1
+```
+
+O banco `ponto.db` fica na pasta de onde o programa roda, e as variáveis de ambiente da tabela acima continuam valendo. Para trocar de versão, feche o programa e substitua só o executável: os dados continuam no `ponto.db`. O painel também abre em outro computador ou celular da mesma rede, em `http://IP_DO_PC:8080`. Para não abrir o navegador sozinho, use `ABRIR_NAVEGADOR=false`.
+
+O painel fica dentro do executável pelo `//go:embed` (`backend/web/`). O `./dev.sh build` compila o painel e copia o resultado para `backend/web/dist` antes de gerar o executável. Rodando o backend pelo `dev.sh` ou com `go run`, o painel continua no `ng serve` (porta 4200), como antes.
 
 ### Pré-requisitos
 
@@ -103,25 +127,7 @@ Os dados ficam num banco **SQLite**, que é um arquivo só: `ponto.db`, criado n
 - Para abrir e consultar as tabelas, use qualquer visualizador de SQLite (por exemplo o [DB Browser for SQLite](https://sqlitebrowser.org/)). As datas ficam em UTC (`2026-11-12T11:02:00.000000000Z` = 08:02 em Brasília).
 - Pedidos de "Ler no relógio" continuam só em memória: duram no máximo 60 s e não precisam ser guardados.
 
-#### Executável para o PC do sistema (painel embutido)
-
-Na raiz do projeto, no seu computador de desenvolvimento:
-
-```bash
-./dev.sh build
-```
-
-Isso compila o painel e gera `release/ponto.exe` (Windows) e `release/ponto` (Linux), com **o painel dentro do executável**.
-
-O PC que vai rodar o sistema **não precisa instalar nada**: nem Go, nem Node, nem banco. É só:
-
-1. Copiar o `ponto.exe` para uma pasta (ex.: `C:\Ponto\`) e abrir. Se o Windows perguntar sobre o firewall, **permita** (o ESP32 precisa acessar a porta 8080).
-2. Abrir o painel no navegador: `http://localhost:8080` nesse PC, ou `http://IP_DO_PC:8080` em outro computador ou celular da mesma rede.
-3. Configurar no ESP32 o servidor `http://IP_DO_PC:8080/api/v1`.
-
-O `ponto.db` é criado na mesma pasta do executável. Para trocar de versão, feche o programa e substitua só o `ponto.exe`: os dados continuam no `ponto.db`.
-
-O painel compilado fica em `backend/web/dist/painel` (fora do git). Um `go run`/`go build` sem esse passo funciona, mas no lugar do painel mostra uma página avisando para rodar `./dev.sh build`.
+Para levar o sistema para o PC que vai usá-lo, sem precisar de Go nem Node, veja [executável](#executável-para-usar-de-verdade).
 
 #### Variáveis de ambiente
 
@@ -131,6 +137,7 @@ O painel compilado fica em `backend/web/dist/painel` (fora do git). Um `go run`/
 | `DEVICE_API_KEY` | `dev-device-key` | Chave que o ESP32 envia no header `X-Device-Key`. **Troque em produção** e configure a mesma chave no relógio (`chave` no `config.txt` do SD ou no monitor serial). |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:4200` | Origens liberadas, separadas por vírgula. `*` libera todas. Só importa se o front não usar o proxy. |
 | `APP_TIMEZONE` | `America/Sao_Paulo` | Fuso usado para separar os dias e calcular horários |
+| `ABRIR_NAVEGADOR` | `true` | abre o painel no navegador ao iniciar (só no executável, que tem o painel embutido) |
 | `SEED_DEMO_DATA` | `false` | `true` cria dados de exemplo ao iniciar (só se o banco estiver vazio) |
 | `DB_PATH` | `ponto.db` | Arquivo do banco SQLite. Pode ser um caminho completo, ex.: `C:\Ponto\ponto.db`. A pasta é criada se não existir. |
 
@@ -705,9 +712,11 @@ Erros: `404` tag não cadastrada · `401` senha incorreta (ou `invalid_device_ke
 | Teclado 4x4 | linhas R1 / R2 / R3 / R4 | VP (36) / VN (39) / D34 / D35 |
 | Teclado 4x4 | colunas C1 / C2 / C3 / C4 | D32 / D33 / D25 / D26 |
 | Resistores 10 kΩ | um em cada linha do teclado (36, 39, 34, 35) | para 3V3 |
-| Buzzer ativo (opcional) | + / − | D17 / GND |
+| Buzzer | + / − | D17 / GND |
 
 Os pinos ficam em `esp32/src/config.h`.
+
+- **Buzzer no D17.** O D13 não serve, porque é o MOSI do SD. Se precisar trocar, o D16 também está livre. Evite D12 e D2: com algo puxando esses pinos, o ESP32 não liga ou não grava. Para buzzer **passivo** (o que só dá um clique quando recebe energia), mude `BUZZER_PASSIVO` para `true` no `config.h`. Teste com o comando `bip` no monitor.
 
 - **Dois barramentos SPI:** o RFID usa o SPI padrão (D18/D19/D23, CS D5) e o SD o segundo SPI do ESP32 (D14/D15/D13, CS D4). Separados, um não atrapalha o outro.
 - **Barramento I2C dividido:** o LCD e o RTC usam os mesmos SDA/SCL, cada um com seu endereço (LCD 0x27 ou 0x3F, detectado sozinho; RTC 0x68).
@@ -795,6 +804,8 @@ Servem para testar sem leitor RFID (ex.: no Wokwi) e para diagnóstico.
 | `sync` | envia a fila agora |
 | `limpar-fila` | apaga a fila (os pontos se perdem) |
 | `funcionarios` | lista de funcionários guardada no relógio |
+| `registros` | últimos 20 eventos gravados no cartão SD (mês atual) |
+| `bip` | testa o buzzer (sons de entrada, saída e erro) |
 | `atualizar` | baixa a lista de funcionários agora |
 | `hora` | data, hora e de onde ela veio (NTP, servidor ou RTC) |
 | `ajuda` | lista os comandos |

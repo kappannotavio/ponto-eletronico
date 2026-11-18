@@ -78,26 +78,6 @@ run_relogio() {
   cd "$BACKEND" && exec go run ./cmd/relogio-virtual
 }
 
-# Gera os executaveis com o painel embutido em release/.
-# O PC que vai usar o sistema so precisa do executavel (sem Go, Node ou banco).
-run_build() {
-  require go "Instale o Go 1.22+: https://go.dev/dl"
-  install_frontend
-
-  blue "Compilando o painel..."
-  (cd "$FRONTEND" && npx ng build)
-
-  mkdir -p "$ROOT/release"
-  blue "Gerando os executaveis..."
-  (cd "$BACKEND" && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o "$ROOT/release/ponto.exe" ./cmd/api)
-  (cd "$BACKEND" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o "$ROOT/release/ponto" ./cmd/api)
-
-  blue "Pronto:"
-  blue "  release/ponto.exe  (Windows)"
-  blue "  release/ponto      (Linux)"
-  blue "Copie para o PC do sistema, abra e acesse http://localhost:8080"
-}
-
 # Usa o pio do PATH ou o instalado em ~/.platformio (mesmo da extensao do VS Code).
 find_pio() {
   if command -v pio >/dev/null 2>&1; then
@@ -125,6 +105,34 @@ run_esp32() {
   esac
 }
 
+# Gera o sistema como um executavel so (backend + painel embutido):
+# release/ponto (Linux) e release/ponto.exe (Windows). Quem usa nao precisa
+# de Go nem de Node: e so rodar o arquivo e abrir http://localhost:8080.
+build_release() {
+  require go "Instale o Go 1.22+: https://go.dev/dl"
+  install_frontend
+
+  blue "Compilando o painel..."
+  (cd "$FRONTEND" && npx ng build)
+
+  local web_dist="$BACKEND/web/dist"
+  find "$web_dist" -mindepth 1 ! -name .gitkeep -delete
+  cp -r "$FRONTEND/dist/frontend/browser/." "$web_dist/"
+
+  mkdir -p "$ROOT/release"
+
+  blue "Gerando release/ponto (Linux)..."
+  (cd "$BACKEND" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath -ldflags "-s -w" -o "$ROOT/release/ponto" ./cmd/api)
+
+  blue "Gerando release/ponto.exe (Windows)..."
+  (cd "$BACKEND" && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+    go build -trimpath -ldflags "-s -w" -o "$ROOT/release/ponto.exe" ./cmd/api)
+
+  blue "Pronto: release/ponto e release/ponto.exe"
+  blue "Rode o arquivo e abra http://localhost:8080 (o banco ponto.db fica na pasta de onde rodar)."
+}
+
 # Bate um ponto de teste como se fosse o ESP32 (precisa do backend rodando).
 fake_punch() {
   local tag="${1:-A1:B2:C3:D4}" pin="${2:-1234}"
@@ -144,9 +152,9 @@ Uso: ./dev.sh [comando]
   frontend          sobe so o frontend (porta 4200)
   relogio           relogio de ponto virtual no terminal (simula o ESP32)
   test              roda os testes do backend e do frontend
-  build             gera release/ponto.exe e release/ponto com o painel embutido
   esp32 [build|upload|monitor]
                     compila, grava ou abre o serial do ESP32
+  build             gera o executavel (release/ponto e release/ponto.exe)
   punch [TAG] [PIN] bate um ponto de teste sem ESP32
                     (padrao: A1:B2:C3:D4 1234)
   help              mostra esta ajuda
@@ -161,8 +169,8 @@ case "${1:-all}" in
   frontend) run_frontend ;;
   relogio) run_relogio ;;
   test) run_tests ;;
-  build) run_build ;;
   esp32) run_esp32 "${2:-build}" ;;
+  build) build_release ;;
   punch) fake_punch "${2:-}" "${3:-}" ;;
   help | -h | --help) usage ;;
   *) red "Comando desconhecido: $1"; usage; exit 1 ;;
