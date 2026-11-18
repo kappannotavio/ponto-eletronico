@@ -111,8 +111,18 @@ bool sdLerConfig(ConfigRede& config) {
     return false;
   }
 
+  bool primeiraLinha = true;
+  int campos = 0;
+
   while (arquivo.available()) {
     String linha = arquivo.readStringUntil('\n');
+
+    // O Bloco de Notas pode salvar "UTF-8 com BOM": 3 bytes invisiveis no
+    // inicio que fariam a primeira linha (wifi_ssid) ser ignorada.
+    if (primeiraLinha && linha.startsWith("\xEF\xBB\xBF")) {
+      linha.remove(0, 3);
+    }
+    primeiraLinha = false;
     linha.trim();
 
     if (linha.length() == 0 || linha.startsWith("#")) {
@@ -138,10 +148,15 @@ bool sdLerConfig(ConfigRede& config) {
       config.apiUrl = valor;
     } else if (chave == "chave") {
       config.chave = valor;
+    } else {
+      Serial.println("config.txt: campo desconhecido \"" + chave + "\" (ignorado)");
+      continue;
     }
+    campos++;
   }
 
   arquivo.close();
+  Serial.println("config.txt lido do cartao SD (" + String(campos) + " campo(s)).");
   return true;
 }
 
